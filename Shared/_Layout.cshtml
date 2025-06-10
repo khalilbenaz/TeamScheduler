@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Application de gestion du planning de présence des employés" />
+    <meta name="keywords" content="planning, présence, congés, employés, gestion" />
+    <meta name="author" content="Votre Entreprise" />
+
+    <title>@ViewData["Title"] - Planning Présence</title>
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="~/favicon.ico" />
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"
+          integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN"
+          crossorigin="anonymous" />
+
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css"
+          integrity="sha384-4LISF5TTJX/fLmGSxO53rV4miRxdg84mZsxmO8Rx5jGtp/LbrixFETvWa5a6sESd"
+          crossorigin="anonymous" />
+
+    <!-- Custom CSS -->
+    <style>
+        .loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            transition: opacity 0.5s ease-out;
+        }
+
+        .loading-content {
+            text-align: center;
+            color: white;
+        }
+
+        .loading-spinner {
+            width: 3rem;
+            height: 3rem;
+            border: 4px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+            margin: 0 auto 1rem;
+        }
+
+        @@keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .loading-text {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .loading-subtext {
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+
+        /* Interface d'erreur Blazor */
+        .blazor-error-ui {
+            background: lightyellow;
+            bottom: 0;
+            box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
+            display: none;
+            left: 0;
+            padding: 0.6rem 1.25rem 0.7rem 1.25rem;
+            position: fixed;
+            width: 100%;
+            z-index: 1000;
+        }
+
+            .blazor-error-ui .dismiss {
+                cursor: pointer;
+                position: absolute;
+                right: 0.75rem;
+                top: 0.5rem;
+            }
+
+        /* Animation d'apparition */
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        @@keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Écran de chargement -->
+    <div id="loading-screen" class="loading-screen">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">Planning Présence</div>
+            <div class="loading-subtext">Chargement de l'application...</div>
+        </div>
+    </div>
+
+    <!-- Contenu principal -->
+    <div id="app-content" style="opacity: 0;">
+        @RenderBody()
+    </div>
+
+    <!-- Interface d'erreur Blazor -->
+    <div id="blazor-error-ui" class="blazor-error-ui">
+        <div class="d-flex align-items-center">
+            <i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>
+            Une erreur inattendue s'est produite. Cette page peut ne plus répondre jusqu'à ce qu'elle soit rechargée.
+            <a href="" class="reload btn btn-link p-0 ms-2">Recharger</a>
+            <a class="dismiss btn-close ms-auto" aria-label="Fermer">×</a>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"
+            integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL"
+            crossorigin="anonymous"></script>
+
+    <!-- Script de gestion du chargement -->
+    <script>
+        // Fonction pour masquer l'écran de chargement
+        function hideLoadingScreen() {
+            const loadingScreen = document.getElementById('loading-screen');
+            const appContent = document.getElementById('app-content');
+
+            if (loadingScreen && appContent) {
+                loadingScreen.style.opacity = '0';
+                appContent.style.opacity = '1';
+                appContent.classList.add('fade-in');
+
+                setTimeout(() => {
+                    loadingScreen.style.display = 'none';
+                }, 500);
+            }
+        }
+
+        // Masquer l'écran de chargement quand tout est prêt
+        document.addEventListener('DOMContentLoaded', function() {
+            // Attendre que Blazor soit initialisé
+            window.addEventListener('load', function() {
+                setTimeout(hideLoadingScreen, 1000); // Délai minimum pour l'expérience utilisateur
+            });
+        });
+
+        // Fonction globale pour télécharger des fichiers
+        window.downloadFile = function (filename, content, contentType) {
+            const link = document.createElement('a');
+            link.download = filename;
+            link.href = `data:${contentType};base64,${content}`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        };
+
+        // Fonction pour afficher des notifications toast personnalisées
+        window.showToast = function (message, type = 'info', duration = 4000) {
+            const toastContainer = document.querySelector('.toast-container') ||
+                (() => {
+                    const container = document.createElement('div');
+                    container.className = 'toast-container position-fixed top-0 end-0 p-3';
+                    container.style.zIndex = '9999';
+                    document.body.appendChild(container);
+                    return container;
+                })();
+
+            const toastHtml = `
+                <div class="toast show" role="alert" aria-live="assertive" aria-atomic="true">
+                    <div class="toast-header text-bg-${type}">
+                        <i class="bi bi-${type === 'success' ? 'check-circle' : type === 'error' ? 'x-circle' : 'info-circle'} me-2"></i>
+                        <strong class="me-auto">${type.charAt(0).toUpperCase() + type.slice(1)}</strong>
+                        <small>À l'instant</small>
+                        <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+                    </div>
+                    <div class="toast-body">
+                        ${message}
+                    </div>
+                </div>
+            `;
+
+            const toastElement = document.createElement('div');
+            toastElement.innerHTML = toastHtml;
+            const toast = toastElement.firstElementChild;
+
+            toastContainer.appendChild(toast);
+
+            // Auto-remove après la durée spécifiée
+            setTimeout(() => {
+                if (toast && toast.parentNode) {
+                    toast.classList.remove('show');
+                    setTimeout(() => {
+                        if (toast.parentNode) {
+                            toast.parentNode.removeChild(toast);
+                        }
+                    }, 300);
+                }
+            }, duration);
+        };
+
+        // Gestion améliorée des erreurs Blazor
+        window.addEventListener('error', function(e) {
+            console.error('Erreur JavaScript:', e.error);
+        });
+    </script>
+
+    <!-- Blazor Server Script -->
+    <script src="_framework/blazor.server.js"></script>
+</body>
+</html>

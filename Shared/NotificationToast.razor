@@ -1,0 +1,36 @@
+@code {
+    private bool visible;
+    private string message;
+    private string title;
+    private string cssClass;
+
+    public void Show(string msg, string ttl = "", string css = "")
+    {
+        message = msg;
+        title = ttl;
+        cssClass = css;
+        visible = true;
+        StateHasChanged();
+        _ = HideAfterDelay();
+    }
+
+    private async Task HideAfterDelay()
+    {
+        await Task.Delay(3000);
+        visible = false;
+        StateHasChanged();
+    }
+}
+
+@if (visible)
+{
+    <div class="toast show position-fixed bottom-0 end-0 m-4" style="z-index: 9999;">
+        <div class="toast-header @cssClass">
+            <strong class="me-auto">@title</strong>
+            <button type="button" class="btn-close" @onclick="() => visible = false"></button>
+        </div>
+        <div class="toast-body">
+            @message
+        </div>
+    </div>
+}

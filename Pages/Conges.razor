@@ -1,0 +1,485 @@
+@page "/conges"
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.EntityFrameworkCore
+@using PlanningPresenceBlazor.Data
+@using PlanningPresenceBlazor.Services
+@inject PlanningService PlanningService
+@inject ToastService ToastService
+@inject PlanningDbContext DbContext
+
+<!-- En-tête de page -->
+<div class="page-header">
+    <h1 class="page-title">
+        <i class="bi bi-list-ul"></i>
+        Gestion des Congés
+    </h1>
+    <p class="page-subtitle">Consultez et gérez les congés de l'équipe</p>
+</div>
+
+<!-- Filtres et actions -->
+<div class="card card-modern mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label fw-bold">Employé</label>
+                <select @bind="selectedEmployee" class="form-select form-control-modern">
+                    <option value="">Tous les employés</option>
+                    @foreach (var emp in employees)
+                    {
+                        <option value="@emp.Nom">@emp.Nom</option>
+                    }
+                </select>
+            </div>
+
+            <div class="col-md-2">
+                <label class="form-label fw-bold">Date début</label>
+                <InputDate @bind-Value="filterDateFrom" class="form-control form-control-modern" />
+            </div>
+
+            <div class="col-md-2">
+                <label class="form-label fw-bold">Date fin</label>
+                <InputDate @bind-Value="filterDateTo" class="form-control form-control-modern" />
+            </div>
+
+            <div class="col-md-2">
+                <label class="form-label fw-bold">Type</label>
+                <select @bind="selectedType" class="form-select form-control-modern">
+                    <option value="">Tous les types</option>
+                    @foreach (var type in Enum.GetValues<TypeConge>())
+                    {
+                        <option value="@type">@GetTypeDisplayName(type)</option>
+                    }
+                </select>
+            </div>
+
+            <div class="col-md-2">
+                <button class="btn btn-primary btn-modern w-100" @onclick="LoadConges">
+                    <i class="bi bi-search me-2"></i>Filtrer
+                </button>
+            </div>
+
+            <div class="col-md-1">
+                <button class="btn btn-success btn-modern w-100" @onclick="ShowAddModal" title="Ajouter un congé">
+                    <i class="bi bi-plus-lg"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Statistiques rapides -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="stats-card">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-calendar-x fs-2 text-primary me-3"></i>
+                <div>
+                    <h5 class="mb-0">@conges.Count</h5>
+                    <small class="text-muted">Total congés</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="stats-card">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-person-check fs-2 text-success me-3"></i>
+                <div>
+                    <h5 class="mb-0">@conges.Where(c => c.EstActif).Count()</h5>
+                    <small class="text-muted">Congés en cours</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="stats-card">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-calendar-date fs-2 text-info me-3"></i>
+                <div>
+                    <h5 class="mb-0">@conges.Sum(c => c.NombreJours)</h5>
+                    <small class="text-muted">Total jours</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="stats-card">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-people fs-2 text-warning me-3"></i>
+                <div>
+                    <h5 class="mb-0">@conges.Select(c => c.Nom).Distinct().Count()</h5>
+                    <small class="text-muted">Employés concernés</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tableau des congés -->
+<div class="card card-modern">
+    <div class="card-header bg-transparent">
+        <div class="d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                <i class="bi bi-table me-2"></i>
+                Liste des congés (@conges.Count)
+            </h5>
+            <div class="d-flex gap-2">
+                <button class="btn btn-outline-primary btn-sm" @onclick="ExportConges">
+                    <i class="bi bi-download me-1"></i>Exporter
+                </button>
+                <button class="btn btn-outline-danger btn-sm" @onclick="ClearFilters">
+                    <i class="bi bi-x-circle me-1"></i>Effacer filtres
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-modern mb-0">
+                <thead>
+                    <tr>
+                        <th>Employé</th>
+                        <th>Date début</th>
+                        <th>Date fin</th>
+                        <th>Durée</th>
+                        <th>Type</th>
+                        <th>Raison</th>
+                        <th>Statut</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (!conges.Any())
+                    {
+                        <tr>
+                            <td colspan="8" class="text-center py-4 text-muted">
+                                <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                                Aucun congé trouvé avec les filtres actuels
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var conge in conges.OrderByDescending(c => c.DateDebut))
+                        {
+                            <tr class="@(conge.EstActif ? "table-warning" : "")">
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <i class="bi bi-person-circle me-2 text-primary"></i>
+                                        <strong>@conge.Nom</strong>
+                                    </div>
+                                </td>
+                                <td>@conge.DateDebut.ToString("dd/MM/yyyy")</td>
+                                <td>@conge.DateFin.ToString("dd/MM/yyyy")</td>
+                                <td>
+                                    <span class="badge bg-info">@conge.NombreJours jour(s)</span>
+                                </td>
+                                <td>
+                                    <span class="badge @GetTypeBadgeClass(conge.Type)">
+                                        @GetTypeDisplayName(conge.Type)
+                                    </span>
+                                </td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(conge.Raison))
+                                    {
+                                        <span title="@conge.Raison">
+                                            @(conge.Raison.Length > 30 ? conge.Raison.Substring(0, 30) + "..." : conge.Raison)
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">-</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (conge.EstActif)
+                                    {
+                                        <span class="badge bg-warning">En cours</span>
+                                    }
+                                    else if (conge.DateFin < DateTime.Today)
+                                    {
+                                        <span class="badge bg-secondary">Terminé</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-primary">À venir</span>
+                                    }
+                                </td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <button class="btn btn-outline-primary" @onclick="() => EditConge(conge)" title="Modifier">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <button class="btn btn-outline-danger" @onclick="() => DeleteConge(conge)" title="Supprimer">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal d'ajout/modification -->
+@if (showModal)
+{
+    <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-@(editingConge?.Id > 0 ? "pencil" : "plus-circle") me-2"></i>
+                        @(editingConge?.Id > 0 ? "Modifier" : "Ajouter") un congé
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+
+                <EditForm Model="editingConge" OnValidSubmit="SaveConge">
+                    <DataAnnotationsValidator />
+                    <div class="modal-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Employé *</label>
+                                <select @bind="editingConge.Nom" class="form-select" required>
+                                    <option value="">Sélectionner un employé</option>
+                                    @foreach (var emp in employees)
+                                    {
+                                        <option value="@emp.Nom">@emp.Nom</option>
+                                    }
+                                </select>
+                                <ValidationMessage For="@(() => editingConge.Nom)" class="text-danger" />
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label">Type de congé</label>
+                                <select @bind="editingConge.Type" class="form-select">
+                                    @foreach (var type in Enum.GetValues<TypeConge>())
+                                    {
+                                        <option value="@type">@GetTypeDisplayName(type)</option>
+                                    }
+                                </select>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label">Date de début *</label>
+                                <InputDate @bind-Value="editingConge.DateDebut" class="form-control" />
+                                <ValidationMessage For="@(() => editingConge.DateDebut)" class="text-danger" />
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label">Date de fin *</label>
+                                <InputDate @bind-Value="editingConge.DateFin" class="form-control" />
+                                <ValidationMessage For="@(() => editingConge.DateFin)" class="text-danger" />
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label">Raison</label>
+                                <InputTextArea @bind-Value="editingConge.Raison" class="form-control" rows="3"
+                                               placeholder="Motif du congé (optionnel)" />
+                                <ValidationMessage For="@(() => editingConge.Raison)" class="text-danger" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @onclick="CloseModal">
+                            Annuler
+                        </button>
+                        <button type="submit" class="btn btn-primary" disabled="@isSaving">
+                            @if (isSaving)
+                            {
+                                <div class="spinner-border spinner-border-sm me-2"></div>
+                            }
+                            <i class="bi bi-check-circle me-1"></i>
+                            @(editingConge?.Id > 0 ? "Modifier" : "Ajouter")
+                        </button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Conge> conges = new();
+    private List<Employe> employees = new();
+    private string selectedEmployee = "";
+    private string selectedType = "";
+    private DateTime? filterDateFrom;
+    private DateTime? filterDateTo;
+
+    private bool showModal = false;
+    private bool isSaving = false;
+    private Conge editingConge = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadEmployees();
+        await LoadConges();
+    }
+
+    private async Task LoadEmployees()
+    {
+        employees = await DbContext.Employes
+            .Where(e => e.EstActif)
+            .OrderBy(e => e.Nom)
+            .ToListAsync();
+    }
+
+    private async Task LoadConges()
+    {
+        var query = DbContext.Conges.AsQueryable();
+
+        if (!string.IsNullOrEmpty(selectedEmployee))
+            query = query.Where(c => c.Nom == selectedEmployee);
+
+        if (!string.IsNullOrEmpty(selectedType) && Enum.TryParse<TypeConge>(selectedType, out var typeEnum))
+            query = query.Where(c => c.Type == typeEnum);
+
+        if (filterDateFrom.HasValue)
+            query = query.Where(c => c.DateFin >= filterDateFrom.Value);
+
+        if (filterDateTo.HasValue)
+            query = query.Where(c => c.DateDebut <= filterDateTo.Value);
+
+        conges = await query.OrderByDescending(c => c.DateDebut).ToListAsync();
+        StateHasChanged();
+    }
+
+    private void ShowAddModal()
+    {
+        editingConge = new Conge
+            {
+                DateDebut = DateTime.Today,
+                DateFin = DateTime.Today,
+                Type = TypeConge.CongeAnnuel
+            };
+        showModal = true;
+    }
+
+    private void EditConge(Conge conge)
+    {
+        editingConge = new Conge
+            {
+                Id = conge.Id,
+                Nom = conge.Nom,
+                DateDebut = conge.DateDebut,
+                DateFin = conge.DateFin,
+                Raison = conge.Raison,
+                Type = conge.Type
+            };
+        showModal = true;
+    }
+
+    private async Task SaveConge()
+    {
+        try
+        {
+            isSaving = true;
+
+            if (editingConge.Id > 0)
+            {
+                // Modification
+                var existing = await DbContext.Conges.FindAsync(editingConge.Id);
+                if (existing != null)
+                {
+                    existing.Nom = editingConge.Nom;
+                    existing.DateDebut = editingConge.DateDebut;
+                    existing.DateFin = editingConge.DateFin;
+                    existing.Raison = editingConge.Raison;
+                    existing.Type = editingConge.Type;
+                }
+            }
+            else
+            {
+                // Ajout
+                DbContext.Conges.Add(editingConge);
+            }
+
+            await DbContext.SaveChangesAsync();
+            ToastService.ShowSuccess("Congé sauvegardé avec succès", "Sauvegarde réussie");
+
+            CloseModal();
+            await LoadConges();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur lors de la sauvegarde: {ex.Message}", "Erreur");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task DeleteConge(Conge conge)
+    {
+        try
+        {
+            DbContext.Conges.Remove(conge);
+            await DbContext.SaveChangesAsync();
+
+            ToastService.ShowSuccess("Congé supprimé avec succès", "Suppression réussie");
+            await LoadConges();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur lors de la suppression: {ex.Message}", "Erreur");
+        }
+    }
+
+    private void CloseModal()
+    {
+        showModal = false;
+        editingConge = new();
+    }
+
+    private void ClearFilters()
+    {
+        selectedEmployee = "";
+        selectedType = "";
+        filterDateFrom = null;
+        filterDateTo = null;
+        _ = LoadConges();
+    }
+
+    private async Task ExportConges()
+    {
+        // Implémentation de l'export CSV des congés
+        ToastService.ShowInfo("Export en cours de développement", "À venir");
+    }
+
+    private string GetTypeDisplayName(TypeConge type)
+    {
+        return type switch
+        {
+            TypeConge.CongeAnnuel => "Congé annuel",
+            TypeConge.CongeMaladie => "Congé maladie",
+            TypeConge.CongeMaternite => "Congé maternité",
+            TypeConge.CongePaternite => "Congé paternité",
+            TypeConge.CongePersonnel => "Congé personnel",
+            TypeConge.Formation => "Formation",
+            _ => type.ToString()
+        };
+    }
+
+    private string GetTypeBadgeClass(TypeConge type)
+    {
+        return type switch
+        {
+            TypeConge.CongeMaladie => "bg-warning",
+            TypeConge.CongeMaternite or TypeConge.CongePaternite => "bg-info",
+            TypeConge.CongePersonnel => "bg-secondary",
+            TypeConge.Formation => "bg-success",
+            _ => "bg-primary"
+        };
+    }
+}

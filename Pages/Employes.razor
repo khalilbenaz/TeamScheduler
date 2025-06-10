@@ -1,0 +1,377 @@
+@page "/employes"
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.EntityFrameworkCore
+@using PlanningPresenceBlazor.Data
+@using PlanningPresenceBlazor.Services
+@inject PlanningDbContext DbContext
+@inject ToastService ToastService
+
+<!-- En-tête de page -->
+<div class="page-header">
+    <h1 class="page-title">
+        <i class="bi bi-people-fill"></i>
+        Gestion des Employés
+    </h1>
+    <p class="page-subtitle">Gérez les informations de contact et préférences de notification</p>
+</div>
+
+<!-- Actions rapides -->
+<div class="card card-modern mb-4">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <button class="btn btn-success btn-modern" @onclick="ShowAddModal">
+                    <i class="bi bi-person-plus me-2"></i>Ajouter un employé
+                </button>
+                <button class="btn btn-outline-primary btn-modern ms-2" @onclick="RefreshData">
+                    <i class="bi bi-arrow-clockwise me-2"></i>Actualiser
+                </button>
+            </div>
+            <div>
+                <span class="badge bg-primary fs-6">@employees.Count employé(s)</span>
+                <span class="badge bg-success fs-6 ms-2">@employees.Count(e => e.EstActif) actif(s)</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Liste des employés -->
+<div class="row">
+    @foreach (var employee in employees.OrderBy(e => e.Nom))
+    {
+        <div class="col-md-6 col-lg-4 mb-4">
+            <div class="card card-modern @(employee.EstActif ? "" : "opacity-50")">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0">
+                        <i class="bi bi-person-circle me-2 text-primary"></i>
+                        @employee.Nom
+                    </h6>
+                    <div>
+                        @if (employee.EstActif)
+                        {
+                            <span class="badge bg-success">Actif</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-secondary">Inactif</span>
+                        }
+                    </div>
+                </div>
+
+                <div class="card-body">
+                    <!-- Contact Email -->
+                    <div class="contact-item mb-2">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-envelope me-2 @(string.IsNullOrEmpty(employee.Email) ? "text-muted" : "text-success")"></i>
+                            <small class="text-muted">Email:</small>
+                        </div>
+                        <div class="ms-4">
+                            @if (string.IsNullOrEmpty(employee.Email))
+                            {
+                                <span class="text-muted">Non configuré</span>
+                            }
+                            else
+                            {
+                                <span>@employee.Email</span>
+                                @if (employee.NotificationEmail)
+                                {
+                                    <i class="bi bi-bell-fill text-success ms-1" title="Notifications activées"></i>
+                                }
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Contact Téléphone -->
+                    <div class="contact-item mb-2">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-telephone me-2 @(string.IsNullOrEmpty(employee.Telephone) ? "text-muted" : "text-success")"></i>
+                            <small class="text-muted">Téléphone:</small>
+                        </div>
+                        <div class="ms-4">
+                            @if (string.IsNullOrEmpty(employee.Telephone))
+                            {
+                                <span class="text-muted">Non configuré</span>
+                            }
+                            else
+                            {
+                                <span>@employee.Telephone</span>
+                                @if (employee.NotificationSMS)
+                                {
+                                    <i class="bi bi-bell-fill text-success ms-1" title="Notifications SMS activées"></i>
+                                }
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Contact Teams -->
+                    <div class="contact-item mb-3">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-microsoft-teams me-2 @(string.IsNullOrEmpty(employee.TeamsId) ? "text-muted" : "text-success")"></i>
+                            <small class="text-muted">Teams:</small>
+                        </div>
+                        <div class="ms-4">
+                            @if (string.IsNullOrEmpty(employee.TeamsId))
+                            {
+                                <span class="text-muted">Non configuré</span>
+                            }
+                            else
+                            {
+                                <span class="text-truncate d-block" style="max-width: 150px;">@employee.TeamsId</span>
+                                @if (employee.NotificationTeams)
+                                {
+                                    <i class="bi bi-bell-fill text-success ms-1" title="Notifications Teams activées"></i>
+                                }
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Date d'embauche -->
+                    <div class="text-muted small mb-3">
+                        <i class="bi bi-calendar-date me-1"></i>
+                        Embauché le @employee.DateEmbauche.ToString("dd/MM/yyyy")
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-outline-primary btn-sm" @onclick="() => EditEmployee(employee)">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-outline-warning btn-sm" @onclick="() => ToggleEmployeeStatus(employee)">
+                            @if (employee.EstActif)
+                            {
+                                <i class="bi bi-pause-circle" title="Désactiver"></i>
+                            }
+                            else
+                            {
+                                <i class="bi bi-play-circle" title="Activer"></i>
+                            }
+                        </button>
+                        <button class="btn btn-outline-info btn-sm" @onclick="() => TestNotification(employee)">
+                            <i class="bi bi-bell" title="Test notification"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<!-- Modal d'ajout/modification -->
+@if (showModal)
+{
+    <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-@(editingEmployee?.Id > 0 ? "pencil" : "person-plus") me-2"></i>
+                        @(editingEmployee?.Id > 0 ? "Modifier" : "Ajouter") un employé
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+
+                <EditForm Model="editingEmployee" OnValidSubmit="SaveEmployee">
+                    <DataAnnotationsValidator />
+                    <div class="modal-body">
+                        <div class="row g-3">
+                            <!-- Informations de base -->
+                            <div class="col-md-6">
+                                <label class="form-label">Nom complet *</label>
+                                <InputText @bind-Value="editingEmployee.Nom" class="form-control" placeholder="Prénom Nom" />
+                                <ValidationMessage For="@(() => editingEmployee.Nom)" class="text-danger" />
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label">Date d'embauche</label>
+                                <InputDate @bind-Value="editingEmployee.DateEmbauche" class="form-control" />
+                            </div>
+
+                            <!-- Contacts -->
+                            <div class="col-12">
+                                <h6 class="border-bottom pb-2">📞 Informations de contact</h6>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label">Email professionnel</label>
+                                <InputText @bind-Value="editingEmployee.Email" class="form-control" placeholder="prenom.nom@entreprise.com" />
+                                <div class="form-check mt-2">
+                                    <InputCheckbox @bind-Value="editingEmployee.NotificationEmail" class="form-check-input" id="notifEmail" />
+                                    <label class="form-check-label" for="notifEmail">
+                                        Recevoir les notifications par email
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label">Téléphone</label>
+                                <InputText @bind-Value="editingEmployee.Telephone" class="form-control" placeholder="+212600000000" />
+                                <div class="form-check mt-2">
+                                    <InputCheckbox @bind-Value="editingEmployee.NotificationSMS" class="form-check-input" id="notifSMS" />
+                                    <label class="form-check-label" for="notifSMS">
+                                        Recevoir les notifications par SMS
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label">ID Microsoft Teams</label>
+                                <InputText @bind-Value="editingEmployee.TeamsId" class="form-control" placeholder="user@tenant.onmicrosoft.com" />
+                                <div class="form-check mt-2">
+                                    <InputCheckbox @bind-Value="editingEmployee.NotificationTeams" class="form-check-input" id="notifTeams" />
+                                    <label class="form-check-label" for="notifTeams">
+                                        Recevoir les notifications via Teams
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- Statut -->
+                            <div class="col-12">
+                                <div class="form-check">
+                                    <InputCheckbox @bind-Value="editingEmployee.EstActif" class="form-check-input" id="actif" />
+                                    <label class="form-check-label" for="actif">
+                                        <strong>Employé actif</strong> (apparaît dans les plannings)
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @onclick="CloseModal">
+                            Annuler
+                        </button>
+                        <button type="submit" class="btn btn-primary" disabled="@isSaving">
+                            @if (isSaving)
+                            {
+                                <div class="spinner-border spinner-border-sm me-2"></div>
+                            }
+                            <i class="bi bi-check-circle me-1"></i>
+                            @(editingEmployee?.Id > 0 ? "Modifier" : "Ajouter")
+                        </button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Employe> employees = new();
+    private bool showModal = false;
+    private bool isSaving = false;
+    private Employe editingEmployee = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshData();
+    }
+
+    private async Task RefreshData()
+    {
+        employees = await DbContext.Employes.OrderBy(e => e.Nom).ToListAsync();
+        StateHasChanged();
+    }
+
+    private void ShowAddModal()
+    {
+        editingEmployee = new Employe
+            {
+                EstActif = true,
+                DateEmbauche = DateTime.Today,
+                NotificationEmail = true
+            };
+        showModal = true;
+    }
+
+    private void EditEmployee(Employe employee)
+    {
+        editingEmployee = new Employe
+            {
+                Id = employee.Id,
+                Nom = employee.Nom,
+                Email = employee.Email,
+                Telephone = employee.Telephone,
+                TeamsId = employee.TeamsId,
+                EstActif = employee.EstActif,
+                DateEmbauche = employee.DateEmbauche,
+                NotificationEmail = employee.NotificationEmail,
+                NotificationSMS = employee.NotificationSMS,
+                NotificationTeams = employee.NotificationTeams
+            };
+        showModal = true;
+    }
+
+    private async Task SaveEmployee()
+    {
+        try
+        {
+            isSaving = true;
+
+            if (editingEmployee.Id > 0)
+            {
+                // Modification
+                var existing = await DbContext.Employes.FindAsync(editingEmployee.Id);
+                if (existing != null)
+                {
+                    existing.Nom = editingEmployee.Nom;
+                    existing.Email = editingEmployee.Email;
+                    existing.Telephone = editingEmployee.Telephone;
+                    existing.TeamsId = editingEmployee.TeamsId;
+                    existing.EstActif = editingEmployee.EstActif;
+                    existing.DateEmbauche = editingEmployee.DateEmbauche;
+                    existing.NotificationEmail = editingEmployee.NotificationEmail;
+                    existing.NotificationSMS = editingEmployee.NotificationSMS;
+                    existing.NotificationTeams = editingEmployee.NotificationTeams;
+                }
+            }
+            else
+            {
+                // Ajout
+                DbContext.Employes.Add(editingEmployee);
+            }
+
+            await DbContext.SaveChangesAsync();
+            ToastService.ShowSuccess("Employé sauvegardé avec succès", "Sauvegarde réussie");
+
+            CloseModal();
+            await RefreshData();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur lors de la sauvegarde: {ex.Message}", "Erreur");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task ToggleEmployeeStatus(Employe employee)
+    {
+        try
+        {
+            employee.EstActif = !employee.EstActif;
+            await DbContext.SaveChangesAsync();
+
+            var status = employee.EstActif ? "activé" : "désactivé";
+            ToastService.ShowSuccess($"{employee.Nom} {status} avec succès", "Statut modifié");
+
+            await RefreshData();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur lors du changement de statut: {ex.Message}", "Erreur");
+        }
+    }
+
+    private async Task TestNotification(Employe employee)
+    {
+        ToastService.ShowInfo($"Test de notification pour {employee.Nom} - Fonctionnalité en développement", "Test notification");
+    }
+
+    private void CloseModal()
+    {
+        showModal = false;
+        editingEmployee = new();
+    }
+}

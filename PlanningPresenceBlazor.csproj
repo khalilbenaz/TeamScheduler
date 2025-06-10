@@ -1,0 +1,60 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<RootNamespace>PlanningPresenceBlazor</RootNamespace>
+		<AssemblyName>PlanningPresenceBlazor</AssemblyName>
+		<Product>Planning Présence</Product>
+		<Company>Votre Entreprise</Company>
+		<Copyright>© 2025 Votre Entreprise</Copyright>
+		<Version>2.0.0</Version>
+		<Description>Application de gestion du planning de présence des employés</Description>
+	</PropertyGroup>
+
+	<ItemGroup>
+	  <Content Remove="appSettings.json" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- Packages principaux -->
+		<PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="8.0.0" />
+
+		<!-- Base de données -->
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.0" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.0">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="8.0.0">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+
+		<!-- Import/Export CSV -->
+		<PackageReference Include="CsvHelper" Version="30.0.1" />
+
+		<!-- Validation et annotations -->
+		<PackageReference Include="System.ComponentModel.Annotations" Version="5.0.0" />
+
+		<!-- Logging et diagnostics -->
+		<PackageReference Include="Serilog.AspNetCore" Version="8.0.0" />
+		<PackageReference Include="Serilog.Sinks.File" Version="5.0.0" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Folder Include="wwwroot\css\" />
+		<Folder Include="wwwroot\js\" />
+		<Folder Include="wwwroot\images\" />
+		<Folder Include="Logs\" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <None Include="appsettings.json">
+	    <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+	    <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+	  </None>
+	</ItemGroup>
+
+</Project>

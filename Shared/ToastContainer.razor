@@ -1,0 +1,85 @@
+@using PlanningPresenceBlazor.Services
+@inject ToastService ToastService
+@implements IDisposable
+
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 9999;">
+    @foreach (var toast in _toasts)
+    {
+        <div class="toast show @GetToastClass(toast.Type)" role="alert">
+            <div class="toast-header">
+                <i class="@GetToastIcon(toast.Type) me-2"></i>
+                <strong class="me-auto">@toast.Title</strong>
+                <small>@toast.CreatedAt.ToString("HH:mm")</small>
+                <button type="button" class="btn-close" @onclick="() => RemoveToast(toast)"></button>
+            </div>
+            <div class="toast-body">
+                @toast.Message
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<ToastMessage> _toasts = new();
+    private readonly object _lock = new();
+
+    protected override void OnInitialized()
+    {
+        ToastService.OnShowToast += ShowToast;
+    }
+
+    private void ShowToast(ToastMessage toast)
+    {
+        lock (_lock)
+        {
+            _toasts.Add(toast);
+        }
+        
+        InvokeAsync(StateHasChanged);
+        
+        // Auto-remove after duration
+        _ = Task.Delay(toast.Duration).ContinueWith(_ =>
+        {
+            RemoveToast(toast);
+        });
+    }
+
+    private void RemoveToast(ToastMessage toast)
+    {
+        lock (_lock)
+        {
+            _toasts.Remove(toast);
+        }
+        
+        InvokeAsync(StateHasChanged);
+    }
+
+    private string GetToastClass(ToastType type)
+    {
+        return type switch
+        {
+            ToastType.Success => "text-bg-success",
+            ToastType.Error => "text-bg-danger",
+            ToastType.Warning => "text-bg-warning",
+            ToastType.Info => "text-bg-info",
+            _ => "text-bg-primary"
+        };
+    }
+
+    private string GetToastIcon(ToastType type)
+    {
+        return type switch
+        {
+            ToastType.Success => "bi bi-check-circle-fill text-success",
+            ToastType.Error => "bi bi-x-circle-fill text-danger",
+            ToastType.Warning => "bi bi-exclamation-triangle-fill text-warning",
+            ToastType.Info => "bi bi-info-circle-fill text-info",
+            _ => "bi bi-bell-fill"
+        };
+    }
+
+    public void Dispose()
+    {
+        ToastService.OnShowToast -= ShowToast;
+    }
+}

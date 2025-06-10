@@ -1,0 +1,410 @@
+@page "/admin"
+@using PlanningPresenceBlazor.Services
+@using PlanningPresenceBlazor.Data
+@using Microsoft.EntityFrameworkCore
+@inject PlanningDbContext DbContext
+@inject ToastService ToastService
+
+<!-- En-tête de page -->
+<div class="page-header">
+    <h1 class="page-title">
+        <i class="bi bi-gear-fill"></i>
+        Administration du Planning
+    </h1>
+    <p class="page-subtitle">Configuration et analyse des contraintes de planning</p>
+</div>
+
+<!-- Contraintes actuelles -->
+<div class="card card-modern mb-4">
+    <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">
+            <i class="bi bi-sliders me-2"></i>
+            Contraintes Actuelles
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-3">
+                <div class="stat-item">
+                    <div class="stat-value text-primary">@PlanningConfig.MIN_PRESENCES_PAR_PERSONNE</div>
+                    <div class="stat-label">Présences min/personne</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-item">
+                    <div class="stat-value text-warning">@PlanningConfig.MIN_PRESENCES_PAR_JOUR_CRITIQUE</div>
+                    <div class="stat-label">Min jours critiques</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-item">
+                    <div class="stat-value text-info">@PlanningConfig.MIN_PRESENCES_PAR_JOUR_NORMAL</div>
+                    <div class="stat-label">Min jours normaux</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-item">
+                    <div class="stat-value text-secondary">@PlanningConfig.MAX_PRESENCES_PAR_JOUR</div>
+                    <div class="stat-label">Max par jour</div>
+                </div>
+            </div>
+        </div>
+
+        <hr>
+
+        <div class="row">
+            <div class="col-md-6">
+                <h6>Jours critiques :</h6>
+                <div class="d-flex gap-2 flex-wrap">
+                    @foreach (var jour in PlanningConfig.JOURS_CRITIQUES)
+                    {
+                        <span class="badge bg-warning">@jour</span>
+                    }
+                </div>
+            </div>
+            <div class="col-md-6">
+                <h6>Jours travaillés :</h6>
+                <div class="d-flex gap-2 flex-wrap">
+                    @foreach (var jour in PlanningConfig.JOURS_TRAVAILLES)
+                    {
+                        <span class="badge bg-primary">@jour</span>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Analyse de faisabilité -->
+<div class="card card-modern mb-4">
+    <div class="card-header bg-info text-white">
+        <h5 class="mb-0">
+            <i class="bi bi-calculator me-2"></i>
+            Analyse de Faisabilité
+        </h5>
+    </div>
+    <div class="card-body">
+        @if (employeesCount > 0)
+        {
+            var validation = PlanningConfig.ValidateConstraints(employeesCount);
+            var stats = PlanningConfig.CalculateTheoreticalStats(employeesCount);
+
+            <div class="row mb-3">
+                <div class="col-md-2">
+                    <div class="stat-item">
+                        <div class="stat-value text-primary">@employeesCount</div>
+                        <div class="stat-label">Employés actifs</div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="stat-item">
+                        <div class="stat-value text-success">@stats.PresencesRequises</div>
+                        <div class="stat-label">Présences requises</div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="stat-item">
+                        <div class="stat-value text-info">@stats.PresencesMaxPossibles</div>
+                        <div class="stat-label">Places disponibles</div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="stat-item">
+                        <div class="stat-value text-warning">@stats.TauxOccupationTheorique.ToString("F1")%</div>
+                        <div class="stat-label">Taux occupation</div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="stat-item">
+                        <div class="stat-value text-secondary">@(stats.PresencesMaxPossibles - stats.PresencesRequises)</div>
+                        <div class="stat-label">Places libres</div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="stat-item">
+                        @if (validation.IsValid)
+                        {
+                            <div class="stat-value text-success">
+                                <i class="bi bi-check-circle-fill"></i>
+                            </div>
+                            <div class="stat-label">Faisable</div>
+                        }
+                        else
+                        {
+                            <div class="stat-value text-danger">
+                                <i class="bi bi-x-circle-fill"></i>
+                            </div>
+                            <div class="stat-label">Impossible</div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            @if (!validation.IsValid)
+            {
+                <div class="alert alert-danger">
+                    <h6><i class="bi bi-exclamation-triangle-fill me-2"></i>Contraintes impossibles à satisfaire :</h6>
+                    <ul class="mb-0">
+                        @foreach (var error in validation.Errors)
+                        {
+                            <li>@error</li>
+                        }
+                    </ul>
+                </div>
+            }
+            else
+            {
+                <div class="alert alert-success">
+                    <i class="bi bi-check-circle-fill me-2"></i>
+                    Les contraintes sont mathématiquement réalisables avec @employeesCount employé(s).
+                </div>
+            }
+        }
+        else
+        {
+            <div class="alert alert-warning">
+                <i class="bi bi-info-circle me-2"></i>
+                Aucun employé actif trouvé. Veuillez vérifier la base de données.
+            </div>
+        }
+    </div>
+</div>
+
+<!-- Simulation avec différents nombres d'employés -->
+<div class="card card-modern mb-4">
+    <div class="card-header bg-secondary text-white">
+        <h5 class="mb-0">
+            <i class="bi bi-graph-up me-2"></i>
+            Simulation pour Différents Effectifs
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-modern">
+                <thead>
+                    <tr>
+                        <th>Employés</th>
+                        <th>Présences requises</th>
+                        <th>Places disponibles</th>
+                        <th>Taux occupation</th>
+                        <th>Faisabilité</th>
+                        <th>Marge</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (int i = 1; i <= 8; i++)
+                    {
+                        var sim = PlanningConfig.CalculateTheoreticalStats(i);
+                        var simValid = PlanningConfig.ValidateConstraints(i);
+
+                        <tr class="@(i == employeesCount ? "table-primary" : "")">
+                            <td>
+                                @i
+                                @if (i == employeesCount)
+                                {
+                                    <span class="badge bg-primary ms-1">Actuel</span>
+                                }
+                            </td>
+                            <td>@sim.PresencesRequises</td>
+                            <td>@sim.PresencesMaxPossibles</td>
+                            <td>
+                                <span class="badge @(sim.TauxOccupationTheorique > 80 ? "bg-warning" : "bg-success")">
+                                    @sim.TauxOccupationTheorique.ToString("F1")%
+                                </span>
+                            </td>
+                            <td>
+                                @if (simValid.IsValid)
+                                {
+                                    <span class="badge bg-success">
+                                        <i class="bi bi-check"></i> Possible
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-danger">
+                                        <i class="bi bi-x"></i> Impossible
+                                    </span>
+                                }
+                            </td>
+                            <td>
+                                @if (simValid.IsValid)
+                                {
+                                    <span class="text-success">+@(sim.PresencesMaxPossibles - sim.PresencesRequises)</span>
+                                }
+                                else
+                                {
+                                    <span class="text-danger">@(sim.PresencesMaxPossibles - sim.PresencesRequises)</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Actions d'administration -->
+<div class="card card-modern">
+    <div class="card-header bg-warning text-dark">
+        <h5 class="mb-0">
+            <i class="bi bi-tools me-2"></i>
+            Actions d'Administration
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-6">
+                <h6>Gestion des employés</h6>
+                <div class="d-flex gap-2 mb-3">
+                    <button class="btn btn-outline-primary" @onclick="RefreshData">
+                        <i class="bi bi-arrow-clockwise me-1"></i>
+                        Actualiser les données
+                    </button>
+                    <button class="btn btn-outline-info" @onclick="ShowEmployeeDetails">
+                        <i class="bi bi-people me-1"></i>
+                        Détails employés
+                    </button>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <h6>Tests et validation</h6>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-outline-success" @onclick="RunConstraintTests">
+                        <i class="bi bi-check-square me-1"></i>
+                        Tester contraintes
+                    </button>
+                    <button class="btn btn-outline-warning" @onclick="GenerateTestData">
+                        <i class="bi bi-database me-1"></i>
+                        Données de test
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        @if (showEmployeeDetails)
+        {
+            <hr>
+            <h6>Employés actifs (@employeesCount)</h6>
+            <div class="row">
+                @foreach (var employee in employees)
+                {
+                    <div class="col-md-3 mb-2">
+                        <div class="card">
+                            <div class="card-body p-2">
+                                <small>
+                                    <i class="bi bi-person-circle me-1"></i>
+                                    @employee.Nom
+                                    <br>
+                                    <span class="text-muted">@employee.Email</span>
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .stat-item {
+        text-align: center;
+        padding: 1rem;
+    }
+
+    .stat-value {
+        font-size: 2rem;
+        font-weight: bold;
+        line-height: 1;
+    }
+
+    .stat-label {
+        font-size: 0.85rem;
+        color: #6c757d;
+        margin-top: 0.25rem;
+    }
+</style>
+
+@code {
+    private int employeesCount = 0;
+    private List<Employe> employees = new();
+    private bool showEmployeeDetails = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshData();
+    }
+
+    private async Task RefreshData()
+    {
+        employees = await DbContext.Employes.Where(e => e.EstActif).ToListAsync();
+        employeesCount = employees.Count;
+        StateHasChanged();
+        ToastService.ShowInfo($"Données actualisées : {employeesCount} employé(s) actif(s)", "Actualisation");
+    }
+
+    private void ShowEmployeeDetails()
+    {
+        showEmployeeDetails = !showEmployeeDetails;
+    }
+
+    private void RunConstraintTests()
+    {
+        var validation = PlanningConfig.ValidateConstraints(employeesCount);
+
+        if (validation.IsValid)
+        {
+            ToastService.ShowSuccess("✅ Toutes les contraintes sont valides", "Tests réussis");
+        }
+        else
+        {
+            ToastService.ShowError($"❌ {validation.Errors.Length} problème(s) détecté(s)", "Tests échoués");
+        }
+    }
+
+    private async Task GenerateTestData()
+    {
+        try
+        {
+            // Ajouter des congés de test si aucun n'existe
+            var existingConges = await DbContext.Conges.CountAsync();
+
+            if (existingConges == 0)
+            {
+                var testConges = new List<Conge>
+                {
+                    new Conge
+                    {
+                        Nom = "Haytame",
+                        DateDebut = DateTime.Today.AddDays(7),
+                        DateFin = DateTime.Today.AddDays(9),
+                        Raison = "Congé de test",
+                        Type = TypeConge.CongeAnnuel
+                    },
+                    new Conge
+                    {
+                        Nom = "Ayoub",
+                        DateDebut = DateTime.Today.AddDays(14),
+                        DateFin = DateTime.Today.AddDays(16),
+                        Raison = "Congé de test",
+                        Type = TypeConge.CongePersonnel
+                    }
+                };
+
+                await DbContext.Conges.AddRangeAsync(testConges);
+                await DbContext.SaveChangesAsync();
+
+                ToastService.ShowSuccess("Données de test créées", "Génération réussie");
+            }
+            else
+            {
+                ToastService.ShowInfo("Des congés existent déjà en base", "Aucune action");
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur : {ex.Message}", "Erreur de génération");
+        }
+    }
+}

@@ -1,0 +1,647 @@
+@page "/"
+@page "/planning"
+@using System.Globalization
+@using CsvHelper
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.JSInterop
+@using PlanningPresenceBlazor.Services
+@inject PlanningService PlanningService
+@inject ToastService ToastService
+@inject NotificationService NotificationService
+@inject IJSRuntime JS
+
+<!-- En-tête de page -->
+<div class="page-header">
+    <h1 class="page-title">
+        <i class="bi bi-calendar-check"></i>
+        Planning Hebdomadaire
+    </h1>
+    <p class="page-subtitle">Générez et gérez votre planning de présence</p>
+</div>
+
+<!-- Panneau de configuration -->
+<div class="card card-modern mb-4">
+    <div class="card-body">
+        <div class="row g-4 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label fw-bold">
+                    <i class="bi bi-calendar3"></i> Semaine de
+                </label>
+                <InputDate @bind-Value="selectedDate"
+                           class="form-control form-control-modern"
+                           @onchange="OnDateChanged" />
+                <div class="form-text">
+                    Du @GetMondayOfWeek(selectedDate).ToString("dd/MM/yyyy")
+                    au @GetMondayOfWeek(selectedDate).AddDays(4).ToString("dd/MM/yyyy")
+                </div>
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label fw-bold">
+                    <i class="bi bi-file-earmark-spreadsheet"></i> Importer congés (CSV)
+                </label>
+                <InputFile OnChange="HandleFileUpload"
+                           class="form-control form-control-modern"
+                           accept=".csv" />
+                <div class="form-text">Format: Nom, Date début, Date fin, Raison, Type</div>
+            </div>
+
+            <div class="col-md-2">
+                <button class="btn btn-primary btn-modern w-100"
+                        @onclick="GeneratePlanning"
+                        disabled="@isLoading">
+                    @if (isLoading)
+                    {
+                            <div class="spinner-border spinner-border-sm me-2"></div>
+                    }
+                    else
+                    {
+                            <i class="bi bi-gear-fill me-2"></i>
+                    }
+                    Générer Planning
+                </button>
+            </div>
+
+            <div class="col-md-2">
+                <button class="btn btn-success btn-modern w-100"
+                        @onclick="ExportCsv"
+                        disabled="@(planningResult == null || isLoading)">
+                    <i class="bi bi-download me-2"></i>
+                    Exporter
+                </button>
+            </div>
+
+            <div class="col-md-2">
+                <button class="btn btn-info btn-modern w-100"
+                        @onclick="ShowNotificationModal"
+                        disabled="@(planningResult == null || isLoading)">
+                    <i class="bi bi-send me-2"></i>
+                    Notifier
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Statistiques -->
+@if (planningResult != null)
+{
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="stats-card">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-people-fill fs-2 text-primary me-3"></i>
+                        <div>
+                            <h5 class="mb-0">@planningResult.TotalEmployes</h5>
+                            <small class="text-muted">Employés actifs</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-3">
+                <div class="stats-card">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-calendar-x fs-2 text-warning me-3"></i>
+                        <div>
+                            <h5 class="mb-0">@planningResult.EmployesEnConge</h5>
+                            <small class="text-muted">En congé cette semaine</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-3">
+                <div class="stats-card">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-check-circle fs-2 text-success me-3"></i>
+                        <div>
+                            <h5 class="mb-0">@GetTotalPresences()</h5>
+                            <small class="text-muted">Total présences</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-3">
+                <div class="stats-card">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-percent fs-2 text-info me-3"></i>
+                        <div>
+                            <h5 class="mb-0">@GetCoveragePercentage()%</h5>
+                            <small class="text-muted">Couverture moyenne</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+}
+
+<!-- Alertes et avertissements -->
+@if (planningResult?.Warnings.Any() == true)
+{
+        <div class="alert warning-alert mb-4">
+            <h6><i class="bi bi-exclamation-triangle-fill me-2"></i>Avertissements</h6>
+        @foreach (var warning in planningResult.Warnings)
+        {
+                    <div class="mb-1">@warning</div>
+        }
+        </div>
+}
+
+<!-- Tableau du planning -->
+@if (planningResult != null)
+{
+        <div class="card card-modern">
+            <div class="card-header bg-transparent">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="bi bi-table me-2"></i>
+                        Planning du @GetMondayOfWeek(selectedDate).ToString("dd/MM/yyyy")
+                        au @GetMondayOfWeek(selectedDate).AddDays(4).ToString("dd/MM/yyyy")
+                    </h5>
+                    <div class="d-flex gap-2">
+                        <span class="badge status-present">Présent</span>
+                        <span class="badge status-conge">Congé</span>
+                        <span class="badge status-absent">Absent</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-modern mb-0">
+                        <thead>
+                            <tr>
+                                <th class="fw-bold">
+                                    <i class="bi bi-person-fill me-2"></i>Employé
+                                </th>
+                            @foreach (var day in WeekDays)
+                            {
+                                        <th class="text-center fw-bold">
+                                    @day
+                                            <br>
+                                            <small class="fw-normal">
+                                        @GetDateForDay(day).ToString("dd/MM")
+                                            </small>
+                                        </th>
+                            }
+                                <th class="text-center fw-bold">
+                                    <i class="bi bi-bar-chart-fill me-1"></i>Total
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var employee in planningResult.Planning.OrderBy(x => x.Key))
+                        {
+                                    <tr>
+                                        <td class="fw-bold">
+                                            <i class="bi bi-person-circle me-2 text-primary"></i>
+                                    @employee.Key
+                                        </td>
+                                @foreach (var day in WeekDays)
+                                {
+                                    var presence = employee.Value[day];
+                                                <td class="text-center">
+                                                    <span class="badge @GetStatusClass(presence.Status)"
+                                                          title="@presence.Note">
+                                            @GetStatusText(presence.Status)
+                                                    </span>
+                                        @if (!string.IsNullOrEmpty(presence.Note))
+                                        {
+                                                            <br>
+                                                            <small class="text-muted">@presence.Note</small>
+                                        }
+                                                </td>
+                                }
+                                        <td class="text-center">
+                                            <span class="badge bg-primary">
+                                        @employee.Value.Count(x => x.Value.Status == PresenceStatus.Present)
+                                            </span>
+                                        </td>
+                                    </tr>
+                        }
+                        </tbody>
+                        <tfoot class="table-light">
+                            <tr>
+                                <th>Total présents par jour</th>
+                            @foreach (var day in WeekDays)
+                            {
+                                        <th class="text-center">
+                                    @planningResult.Planning.Count(x => x.Value[day].Status == PresenceStatus.Present)
+                                        </th>
+                            }
+                                <th class="text-center">
+                                @GetTotalPresences()
+                                </th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+}
+else
+{
+        <div class="card card-modern">
+            <div class="card-body text-center py-5">
+                <i class="bi bi-calendar3 fs-1 text-muted mb-3"></i>
+                <h5 class="text-muted">Aucun planning généré</h5>
+                <p class="text-muted">Sélectionnez une date et cliquez sur "Générer Planning" pour commencer.</p>
+            </div>
+        </div>
+}
+
+<!-- Modal de notification -->
+@if (showNotificationModal && notificationPreviews.Any())
+{
+        <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.5);">
+            <div class="modal-dialog modal-xl">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            <i class="bi bi-send me-2"></i>
+                            Envoyer les notifications de planning
+                        </h5>
+                        <button type="button" class="btn-close" @onclick="CloseNotificationModal"></button>
+                    </div>
+
+                    <div class="modal-body">
+                        <!-- Sélection du mode de notification -->
+                        <div class="row mb-4">
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="notificationMethod" 
+                                           value="Email" @onchange="() => selectedNotificationMethod = NotificationMethod.Email" 
+                                           checked="@(selectedNotificationMethod == NotificationMethod.Email)" />
+                                    <label class="form-check-label">
+                                        <i class="bi bi-envelope me-2"></i>Email
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="notificationMethod" 
+                                           value="SMS" @onchange="() => selectedNotificationMethod = NotificationMethod.SMS" 
+                                           checked="@(selectedNotificationMethod == NotificationMethod.SMS)" />
+                                    <label class="form-check-label">
+                                        <i class="bi bi-phone me-2"></i>SMS
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="notificationMethod" 
+                                           value="Teams" @onchange="() => selectedNotificationMethod = NotificationMethod.Teams" 
+                                           checked="@(selectedNotificationMethod == NotificationMethod.Teams)" />
+                                    <label class="form-check-label">
+                                        <i class="bi bi-microsoft-teams me-2"></i>Teams
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Mode test -->
+                        <div class="alert alert-info">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" @bind="testMode" id="testMode" />
+                                <label class="form-check-label" for="testMode">
+                                    <strong>Mode test</strong> - Les notifications ne seront pas réellement envoyées (recommandé pour les tests)
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Prévisualisation des notifications -->
+                        <h6>Prévisualisation des notifications (@notificationPreviews.Count employé(s))</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Employé</th>
+                                        <th>Contact</th>
+                                        <th>Jours présents</th>
+                                        <th>Disponibilité</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                @foreach (var preview in notificationPreviews)
+                                {
+                                            <tr>
+                                                <td class="fw-bold">@preview.EmployeeName</td>
+                                                <td>
+                                            @if (selectedNotificationMethod == NotificationMethod.Email)
+                                            {
+                                                            <span class="@(preview.HasEmail ? "text-success" : "text-danger")">
+                                                                <i class="bi bi-@(preview.HasEmail ? "check" : "x")-circle me-1"></i>
+                                                    @preview.Email
+                                                            </span>
+                                            }
+                                            else if (selectedNotificationMethod == NotificationMethod.SMS)
+                                            {
+                                                            <span class="@(preview.HasPhone ? "text-success" : "text-danger")">
+                                                                <i class="bi bi-@(preview.HasPhone ? "check" : "x")-circle me-1"></i>
+                                                    @preview.Telephone
+                                                            </span>
+                                            }
+                                            else
+                                            {
+                                                            <span class="@(preview.HasTeams ? "text-success" : "text-danger")">
+                                                                <i class="bi bi-@(preview.HasTeams ? "check" : "x")-circle me-1"></i>
+                                                    @preview.TeamsId
+                                                            </span>
+                                            }
+                                                </td>
+                                                <td>
+                                            @foreach (var day in preview.PresentDays)
+                                            {
+                                                            <span class="badge bg-success me-1">@day</span>
+                                            }
+                                                </td>
+                                                <td>
+                                            @{
+                                                var canReceive = selectedNotificationMethod switch
+                                                {
+                                                    NotificationMethod.Email => preview.HasEmail,
+                                                    NotificationMethod.SMS => preview.HasPhone,
+                                                    NotificationMethod.Teams => preview.HasTeams,
+                                                    _ => false
+                                                };
+                                            }
+                                            @if (canReceive)
+                                            {
+                                                            <span class="badge bg-success">Disponible</span>
+                                            }
+                                            else
+                                            {
+                                                            <span class="badge bg-danger">Non configuré</span>
+                                            }
+                                                </td>
+                                            </tr>
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @onclick="CloseNotificationModal">
+                            Annuler
+                        </button>
+                        <button type="button" class="btn btn-primary" @onclick="SendNotifications" disabled="@isSendingNotifications">
+                        @if (isSendingNotifications)
+                        {
+                                    <div class="spinner-border spinner-border-sm me-2"></div>
+                        }
+                        else
+                        {
+                                    <i class="bi bi-send me-2"></i>
+                        }
+                        @(testMode ? "Tester l'envoi" : "Envoyer les notifications")
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+}
+
+@code {
+    private DateTime selectedDate = DateTime.Today;
+    private PlanningResult? planningResult;
+    private bool isLoading = false;
+    private bool showNotificationModal = false;
+    private bool isSendingNotifications = false;
+    private bool testMode = true;
+    private NotificationMethod selectedNotificationMethod = NotificationMethod.Email;
+    private List<NotificationPreview> notificationPreviews = new();
+    private static readonly string[] WeekDays = { "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi" };
+
+    protected override async Task OnInitializedAsync()
+    {
+        selectedDate = GetMondayOfWeek(DateTime.Today);
+        await GeneratePlanning();
+    }
+
+    private async Task OnDateChanged()
+    {
+        selectedDate = GetMondayOfWeek(selectedDate);
+        await GeneratePlanning();
+    }
+
+    private async Task HandleFileUpload(InputFileChangeEventArgs e)
+    {
+        if (e.File == null) return;
+
+        try
+        {
+            isLoading = true;
+            StateHasChanged();
+
+            using var reader = new StreamReader(e.File.OpenReadStream());
+            using var csv = new CsvReader(reader, CultureInfo.InvariantCulture);
+
+            var conges = csv.GetRecords<CongeCsv>().ToList();
+
+            if (conges.Any())
+            {
+                var success = await PlanningService.SaveCongesToDbAsync(conges);
+
+                if (success)
+                {
+                    ToastService.ShowSuccess($"✅ {conges.Count} congé(s) importé(s) avec succès", "Import réussi");
+                    await GeneratePlanning();
+                }
+                else
+                {
+                    ToastService.ShowError("Erreur lors de l'import des congés", "Erreur d'import");
+                }
+            }
+            else
+            {
+                ToastService.ShowWarning("Aucun congé trouvé dans le fichier", "Fichier vide");
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur lors de la lecture du fichier: {ex.Message}", "Erreur");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task GeneratePlanning()
+    {
+        try
+        {
+            isLoading = true;
+            StateHasChanged();
+
+            var mondayOfWeek = GetMondayOfWeek(selectedDate);
+            planningResult = await PlanningService.GeneratePlanningAsync(mondayOfWeek);
+
+            ToastService.ShowSuccess("Planning généré avec succès", "Génération terminée");
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur lors de la génération: {ex.Message}", "Erreur");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ExportCsv()
+    {
+        if (planningResult == null) return;
+
+        try
+        {
+            var csvData = await PlanningService.ExportPlanningToCsvAsync(planningResult.Planning);
+            var fileName = $"planning_{GetMondayOfWeek(selectedDate):yyyy-MM-dd}.csv";
+
+            await JS.InvokeVoidAsync("downloadFile", fileName, Convert.ToBase64String(csvData), "text/csv");
+            ToastService.ShowSuccess("Planning exporté avec succès", "Export terminé");
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur lors de l'export: {ex.Message}", "Erreur d'export");
+        }
+    }
+
+    private async Task ShowNotificationModal()
+    {
+        if (planningResult == null) return;
+
+        try
+        {
+            var notifications = PlanningService.GeneratePresenceNotifications(planningResult.Planning, planningResult.WeekStart);
+            notificationPreviews = await NotificationService.GenerateNotificationPreviews(notifications);
+            showNotificationModal = true;
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur lors de la préparation: {ex.Message}", "Erreur");
+        }
+    }
+
+    private void CloseNotificationModal()
+    {
+        showNotificationModal = false;
+        notificationPreviews.Clear();
+    }
+
+    private async Task SendNotifications()
+    {
+        if (planningResult == null || !notificationPreviews.Any()) return;
+
+        try
+        {
+            isSendingNotifications = true;
+            StateHasChanged();
+
+            var notifications = PlanningService.GeneratePresenceNotifications(planningResult.Planning, planningResult.WeekStart);
+            var result = await NotificationService.SendPlanningNotificationsAsync(notifications, selectedNotificationMethod, testMode);
+
+            if (result.HasErrors)
+            {
+                ToastService.ShowWarning(
+                    $"✅ {result.TotalSent} envoyé(s), ❌ {result.TotalFailed} échec(s)",
+                    "Envoi partiellement réussi"
+                );
+            }
+            else
+            {
+                ToastService.ShowSuccess(
+                    $"✅ {result.TotalSent} notification(s) envoyée(s) avec succès",
+                    testMode ? "Test réussi" : "Envoi réussi"
+                );
+            }
+
+            CloseNotificationModal();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur lors de l'envoi: {ex.Message}", "Erreur de notification");
+        }
+        finally
+        {
+            isSendingNotifications = false;
+            StateHasChanged();
+        }
+    }
+
+    // Méthodes utilitaires
+    private DateTime GetMondayOfWeek(DateTime date)
+    {
+        int daysFromMonday = ((int)date.DayOfWeek - 1 + 7) % 7;
+        return date.AddDays(-daysFromMonday);
+    }
+
+    private DateTime GetDateForDay(string dayName)
+    {
+        var monday = GetMondayOfWeek(selectedDate);
+        return dayName switch
+        {
+            "Lundi" => monday,
+            "Mardi" => monday.AddDays(1),
+            "Mercredi" => monday.AddDays(2),
+            "Jeudi" => monday.AddDays(3),
+            "Vendredi" => monday.AddDays(4),
+            _ => monday
+        };
+    }
+
+    private string GetStatusClass(PresenceStatus status)
+    {
+        return status switch
+        {
+            PresenceStatus.Present => "status-present",
+            PresenceStatus.Conge => "status-conge",
+            _ => "status-absent"
+        };
+    }
+
+    private string GetStatusText(PresenceStatus status)
+    {
+        return status switch
+        {
+            PresenceStatus.Present => "Présent",
+            PresenceStatus.Conge => "Congé",
+            _ => "Absent"
+        };
+    }
+
+    private int GetTotalPresences()
+    {
+        if (planningResult == null) return 0;
+
+        return planningResult.Planning
+            .SelectMany(x => x.Value.Values)
+            .Count(x => x.Status == PresenceStatus.Present);
+    }
+
+    private int GetCoveragePercentage()
+    {
+        if (planningResult == null) return 0;
+
+        var totalSlots = planningResult.Planning.Count * WeekDays.Length;
+        var filledSlots = GetTotalPresences();
+
+        return totalSlots > 0 ? (filledSlots * 100) / totalSlots : 0;
+    }
+}
+
+<script>
+    window.downloadFile = function (filename, content, contentType) {
+        const link = document.createElement('a');
+        link.download = filename;
+        link.href = `data:${contentType};base64,${content}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+</script>

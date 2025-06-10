@@ -1,0 +1,429 @@
+@page "/admin/notifications"
+@using PlanningPresenceBlazor.Services
+@using PlanningPresenceBlazor.Data
+@using Microsoft.EntityFrameworkCore
+@inject NotificationService NotificationService
+@inject PlanningDbContext DbContext
+@inject ToastService ToastService
+@inject IConfiguration Configuration
+
+<!-- En-tête de page -->
+<div class="page-header">
+    <h1 class="page-title">
+        <i class="bi bi-bell-fill"></i>
+        Administration des Notifications
+    </h1>
+    <p class="page-subtitle">Configuration et test des systèmes de notification</p>
+</div>
+
+<!-- État de la configuration -->
+<div class="card card-modern mb-4">
+    <div class="card-header bg-info text-white">
+        <h5 class="mb-0">
+            <i class="bi bi-gear-fill me-2"></i>
+            État de la Configuration
+        </h5>
+    </div>
+    <div class="card-body">
+        @if (testResult != null)
+        {
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="config-status">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="bi bi-envelope fs-3 me-3 @(testResult.EmailConfigured ? "text-success" : "text-danger")"></i>
+                            <div>
+                                <h6 class="mb-0">Email (SMTP)</h6>
+                                <span class="badge @(testResult.EmailConfigured ? "bg-success" : "bg-danger")">
+                                    @(testResult.EmailConfigured ? "Configuré" : "Non configuré")
+                                </span>
+                            </div>
+                        </div>
+                        <small class="text-muted">
+                            @testResult.EmployeesWithEmail/@testResult.TotalEmployees employé(s) activé(s)
+                        </small>
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="config-status">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="bi bi-phone fs-3 me-3 @(testResult.SMSConfigured ? "text-success" : "text-danger")"></i>
+                            <div>
+                                <h6 class="mb-0">SMS</h6>
+                                <span class="badge @(testResult.SMSConfigured ? "bg-success" : "bg-danger")">
+                                    @(testResult.SMSConfigured ? "Configuré" : "Non configuré")
+                                </span>
+                            </div>
+                        </div>
+                        <small class="text-muted">
+                            @testResult.EmployeesWithSMS/@testResult.TotalEmployees employé(s) activé(s)
+                        </small>
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="config-status">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="bi bi-microsoft-teams fs-3 me-3 @(testResult.TeamsConfigured ? "text-success" : "text-danger")"></i>
+                            <div>
+                                <h6 class="mb-0">Microsoft Teams</h6>
+                                <span class="badge @(testResult.TeamsConfigured ? "bg-success" : "bg-danger")">
+                                    @(testResult.TeamsConfigured ? "Configuré" : "Non configuré")
+                                </span>
+                            </div>
+                        </div>
+                        <small class="text-muted">
+                            @testResult.EmployeesWithTeams/@testResult.TotalEmployees employé(s) activé(s)
+                        </small>
+                    </div>
+                </div>
+            </div>
+
+            <hr>
+
+            <div class="row">
+                <div class="col-md-12">
+                    <button class="btn btn-outline-primary" @onclick="RefreshConfiguration">
+                        <i class="bi bi-arrow-clockwise me-2"></i>Actualiser l'état
+                    </button>
+                    <button class="btn btn-outline-info ms-2" @onclick="ShowConfigurationDetails">
+                        <i class="bi bi-info-circle me-2"></i>Détails configuration
+                    </button>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="text-center">
+                <div class="spinner-border text-primary" role="status"></div>
+                <p class="mt-2">Vérification de la configuration...</p>
+            </div>
+        }
+    </div>
+</div>
+
+<!-- Tests de notification -->
+<div class="card card-modern mb-4">
+    <div class="card-header bg-warning text-dark">
+        <h5 class="mb-0">
+            <i class="bi bi-bug-fill me-2"></i>
+            Tests de Notification
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Employé de test</label>
+                <select @bind="selectedTestEmployee" class="form-select">
+                    <option value="">Sélectionner un employé</option>
+                    @foreach (var emp in employees)
+                    {
+                        <option value="@emp.Nom">@emp.Nom</option>
+                    }
+                </select>
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label">Méthode de notification</label>
+                <select @bind="testNotificationMethod" class="form-select">
+                    <option value="Email">Email</option>
+                    <option value="SMS">SMS</option>
+                    <option value="Teams">Teams</option>
+                </select>
+            </div>
+
+            <div class="col-md-4 d-flex align-items-end">
+                <button class="btn btn-warning w-100"
+                        @onclick="SendTestNotification"
+                        disabled="@(string.IsNullOrEmpty(selectedTestEmployee) || isTesting)">
+                    @if (isTesting)
+                    {
+                        <div class="spinner-border spinner-border-sm me-2"></div>
+                    }
+                    else
+                    {
+                        <i class="bi bi-send me-2"></i>
+                    }
+                    Envoyer test
+                </button>
+            </div>
+        </div>
+
+        <div class="form-check mt-3">
+            <input class="form-check-input" type="checkbox" @bind="testMode" id="testModeCheck" />
+            <label class="form-check-label" for="testModeCheck">
+                Mode simulation (pas d'envoi réel)
+            </label>
+        </div>
+
+        @if (lastTestResult != null)
+        {
+            <div class="alert @(lastTestResult.HasErrors ? "alert-warning" : "alert-success") mt-3">
+                <h6>Résultat du dernier test :</h6>
+                <ul class="mb-0">
+                    @foreach (var success in lastTestResult.Successful)
+                    {
+                        <li class="text-success">✅ @success</li>
+                    }
+                    @foreach (var failure in lastTestResult.Failed)
+                    {
+                        <li class="text-danger">❌ @failure</li>
+                    }
+                </ul>
+                <small class="text-muted">
+                    Taux de réussite: @lastTestResult.SuccessRate.ToString("F1")%
+                </small>
+            </div>
+        }
+    </div>
+</div>
+
+<!-- Configuration détaillée -->
+@if (showConfigDetails)
+{
+    <div class="card card-modern mb-4">
+        <div class="card-header bg-secondary text-white">
+            <h5 class="mb-0">
+                <i class="bi bi-sliders me-2"></i>
+                Détails de Configuration
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-4">
+                    <h6>📧 Configuration Email</h6>
+                    <ul class="list-unstyled">
+                        <li><strong>Host:</strong> @(Configuration["Email:SmtpHost"] ?? "Non configuré")</li>
+                        <li><strong>Port:</strong> @(Configuration["Email:SmtpPort"] ?? "Non configuré")</li>
+                        <li><strong>Username:</strong> @(Configuration["Email:Username"] ?? "Non configuré")</li>
+                        <li><strong>Password:</strong> @(!string.IsNullOrEmpty(Configuration["Email:Password"]) ? "***" : "Non configuré")</li>
+                        <li><strong>From:</strong> @(Configuration["Email:FromAddress"] ?? "Non configuré")</li>
+                    </ul>
+                </div>
+
+                <div class="col-md-4">
+                    <h6>📱 Configuration SMS</h6>
+                    <ul class="list-unstyled">
+                        <li><strong>API URL:</strong> @(Configuration["SMS:ApiUrl"] ?? "Non configuré")</li>
+                        <li><strong>API Key:</strong> @(!string.IsNullOrEmpty(Configuration["SMS:ApiKey"]) ? "***" : "Non configuré")</li>
+                        <li><strong>From Number:</strong> @(Configuration["SMS:FromNumber"] ?? "Non configuré")</li>
+                    </ul>
+                </div>
+
+                <div class="col-md-4">
+                    <h6>🔗 Configuration Teams</h6>
+                    <ul class="list-unstyled">
+                        <li><strong>Webhook:</strong> @(!string.IsNullOrEmpty(Configuration["Teams:WebhookUrl"]) ? "Configuré" : "Non configuré")</li>
+                        <li><strong>Tenant ID:</strong> @(Configuration["Teams:TenantId"] ?? "Non configuré")</li>
+                        <li><strong>Client ID:</strong> @(Configuration["Teams:ClientId"] ?? "Non configuré")</li>
+                        <li><strong>Client Secret:</strong> @(!string.IsNullOrEmpty(Configuration["Teams:ClientSecret"]) ? "***" : "Non configuré")</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Statistiques des employés -->
+<div class="card card-modern">
+    <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">
+            <i class="bi bi-people-fill me-2"></i>
+            État des Employés
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-modern">
+                <thead>
+                    <tr>
+                        <th>Employé</th>
+                        <th class="text-center">Email</th>
+                        <th class="text-center">SMS</th>
+                        <th class="text-center">Teams</th>
+                        <th class="text-center">Statut global</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var employee in employees)
+                    {
+                        var emailOk = employee.NotificationEmail && !string.IsNullOrEmpty(employee.Email);
+                        var smsOk = employee.NotificationSMS && !string.IsNullOrEmpty(employee.Telephone);
+                        var teamsOk = employee.NotificationTeams && !string.IsNullOrEmpty(employee.TeamsId);
+                        var anyOk = emailOk || smsOk || teamsOk;
+
+                        <tr>
+                            <td class="fw-bold">
+                                <i class="bi bi-person-circle me-2"></i>
+                                @employee.Nom
+                            </td>
+                            <td class="text-center">
+                                @if (emailOk)
+                                {
+                                    <i class="bi bi-check-circle-fill text-success" title="@employee.Email"></i>
+                                }
+                                else if (!string.IsNullOrEmpty(employee.Email))
+                                {
+                                    <i class="bi bi-x-circle-fill text-warning" title="Email configuré mais notifications désactivées"></i>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-dash-circle-fill text-muted" title="Email non configuré"></i>
+                                }
+                            </td>
+                            <td class="text-center">
+                                @if (smsOk)
+                                {
+                                    <i class="bi bi-check-circle-fill text-success" title="@employee.Telephone"></i>
+                                }
+                                else if (!string.IsNullOrEmpty(employee.Telephone))
+                                {
+                                    <i class="bi bi-x-circle-fill text-warning" title="Téléphone configuré mais notifications désactivées"></i>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-dash-circle-fill text-muted" title="Téléphone non configuré"></i>
+                                }
+                            </td>
+                            <td class="text-center">
+                                @if (teamsOk)
+                                {
+                                    <i class="bi bi-check-circle-fill text-success" title="@employee.TeamsId"></i>
+                                }
+                                else if (!string.IsNullOrEmpty(employee.TeamsId))
+                                {
+                                    <i class="bi bi-x-circle-fill text-warning" title="Teams configuré mais notifications désactivées"></i>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-dash-circle-fill text-muted" title="Teams non configuré"></i>
+                                }
+                            </td>
+                            <td class="text-center">
+                                @if (anyOk)
+                                {
+                                    <span class="badge bg-success">Prêt</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-danger">Non configuré</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+    .config-status {
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 1rem;
+        height: 100%;
+    }
+</style>
+
+@code {
+    private NotificationTestResult? testResult;
+    private List<Employe> employees = new();
+    private string selectedTestEmployee = "";
+    private string testNotificationMethod = "Email";
+    private bool testMode = true;
+    private bool isTesting = false;
+    private bool showConfigDetails = false;
+    private NotificationResult? lastTestResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        employees = await DbContext.Employes.Where(e => e.EstActif).OrderBy(e => e.Nom).ToListAsync();
+        await RefreshConfiguration();
+    }
+
+    private async Task RefreshConfiguration()
+    {
+        try
+        {
+            testResult = await NotificationService.TestNotificationConfigurationAsync();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur lors de la vérification: {ex.Message}", "Erreur");
+        }
+    }
+
+    private void ShowConfigurationDetails()
+    {
+        showConfigDetails = !showConfigDetails;
+    }
+
+    private async Task SendTestNotification()
+    {
+        if (string.IsNullOrEmpty(selectedTestEmployee)) return;
+
+        try
+        {
+            isTesting = true;
+            StateHasChanged();
+
+            var employee = employees.FirstOrDefault(e => e.Nom == selectedTestEmployee);
+            if (employee == null)
+            {
+                ToastService.ShowError("Employé non trouvé", "Erreur");
+                return;
+            }
+
+            // Créer une notification de test
+            var testNotification = new PresenceNotification
+                {
+                    EmployeeName = employee.Nom,
+                    WeekStart = DateTime.Today,
+                    PresentDays = new List<string> { "Lundi 10/06", "Mercredi 12/06", "Vendredi 14/06" },
+                    TotalPresences = 3,
+                    Message = "Ceci est un message de test du système de notification."
+                };
+
+            var method = Enum.Parse<NotificationMethod>(testNotificationMethod);
+            var result = await NotificationService.SendPlanningNotificationsAsync(
+                new List<PresenceNotification> { testNotification },
+                method,
+                testMode
+            );
+
+            lastTestResult = result;
+
+            if (result.HasErrors)
+            {
+                ToastService.ShowWarning(
+                    $"Test partiellement réussi: {result.TotalSent} envoyé(s), {result.TotalFailed} échec(s)",
+                    "Test de notification"
+                );
+            }
+            else
+            {
+                ToastService.ShowSuccess(
+                    $"Test réussi ! Notification {testNotificationMethod} envoyée à {employee.Nom}",
+                    testMode ? "Test simulé" : "Test réel"
+                );
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur lors du test: {ex.Message}", "Erreur de test");
+        }
+        finally
+        {
+            isTesting = false;
+            StateHasChanged();
+        }
+    }
+}

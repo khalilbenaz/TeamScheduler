@@ -1,0 +1,484 @@
+@page "/upload"
+@using System.Globalization
+@using CsvHelper
+@using Microsoft.AspNetCore.Components.Forms
+@using PlanningPresenceBlazor.Services
+@inject PlanningService PlanningService
+@inject ToastService ToastService
+@inject NavigationManager Navigation
+
+<!-- En-tête de page -->
+<div class="page-header">
+    <h1 class="page-title">
+        <i class="bi bi-cloud-upload"></i>
+        Import des Congés
+    </h1>
+    <p class="page-subtitle">Importez les données de congés depuis un fichier CSV</p>
+</div>
+
+<!-- Instructions -->
+<div class="card card-modern mb-4">
+    <div class="card-header bg-info text-white">
+        <h5 class="mb-0">
+            <i class="bi bi-info-circle me-2"></i>
+            Format du fichier CSV
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-6">
+                <h6>Colonnes requises :</h6>
+                <ul class="list-unstyled">
+                    <li><i class="bi bi-check text-success me-2"></i><strong>Nom</strong> - Nom de l'employé</li>
+                    <li><i class="bi bi-check text-success me-2"></i><strong>DateDebut</strong> - Date de début (DD/MM/YYYY)</li>
+                    <li><i class="bi bi-check text-success me-2"></i><strong>DateFin</strong> - Date de fin (DD/MM/YYYY)</li>
+                    <li><i class="bi bi-dash text-muted me-2"></i><strong>Raison</strong> - Raison du congé (optionnel)</li>
+                    <li><i class="bi bi-dash text-muted me-2"></i><strong>Type</strong> - Type de congé (optionnel)</li>
+                </ul>
+            </div>
+            <div class="col-md-6">
+                <h6>Types de congé disponibles :</h6>
+                <ul class="list-unstyled">
+                    <li><span class="badge bg-primary me-2">annuel</span>Congé annuel (défaut)</li>
+                    <li><span class="badge bg-warning me-2">maladie</span>Congé maladie</li>
+                    <li><span class="badge bg-info me-2">maternité</span>Congé maternité</li>
+                    <li><span class="badge bg-info me-2">paternité</span>Congé paternité</li>
+                    <li><span class="badge bg-secondary me-2">personnel</span>Congé personnel</li>
+                    <li><span class="badge bg-success me-2">formation</span>Formation</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="alert alert-light mt-3">
+            <h6>Exemple de contenu CSV :</h6>
+            <code>
+                Nom,DateDebut,DateFin,Raison,Type<br>
+                Haytame,01/06/2025,05/06/2025,Vacances été,annuel<br>
+                Ayoub,10/06/2025,12/06/2025,Visite médicale,maladie<br>
+                Khalil,15/06/2025,15/06/2025,Rendez-vous personnel,personnel
+            </code>
+        </div>
+    </div>
+</div>
+
+<!-- Zone d'upload -->
+<div class="card card-modern mb-4">
+    <div class="card-body">
+        <div class="row g-4">
+            <div class="col-md-8">
+                <label class="form-label fw-bold">
+                    <i class="bi bi-file-earmark-spreadsheet me-2"></i>
+                    Sélectionner le fichier CSV
+                </label>
+                <InputFile OnChange="HandleFileUpload"
+                           class="form-control form-control-modern"
+                           accept=".csv"
+                           disabled="@isUploading" />
+                <div class="form-text">
+                    Formats acceptés : .csv (taille max : 10 MB)
+                </div>
+            </div>
+
+            <div class="col-md-4 d-flex align-items-end">
+                <button class="btn btn-primary btn-modern w-100"
+                        @onclick="ProcessFile"
+                        disabled="@(selectedFile == null || isUploading)">
+                    @if (isUploading)
+                    {
+                        <div class="spinner-border spinner-border-sm me-2"></div>
+                        <span>Traitement...</span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-upload me-2"></i>
+                        <span>Traiter le fichier</span>
+                    }
+                </button>
+            </div>
+        </div>
+
+        @if (selectedFile != null)
+        {
+            <div class="mt-3 p-3 bg-light rounded">
+                <h6>Fichier sélectionné :</h6>
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <i class="bi bi-file-earmark-text me-2"></i>
+                        <strong>@selectedFile.Name</strong>
+                    </div>
+                    <div class="text-muted">
+                        @FormatFileSize(selectedFile.Size)
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<!-- Prévisualisation des données -->
+@if (previewData.Any())
+{
+    <div class="card card-modern mb-4">
+        <div class="card-header bg-transparent">
+            <h5 class="mb-0">
+                <i class="bi bi-eye me-2"></i>
+                Prévisualisation des données (@previewData.Count lignes)
+            </h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-modern mb-0">
+                    <thead>
+                        <tr>
+                            <th>Nom</th>
+                            <th>Date début</th>
+                            <th>Date fin</th>
+                            <th>Durée</th>
+                            <th>Raison</th>
+                            <th>Type</th>
+                            <th>Statut</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in previewData.Take(10))
+                        {
+                            <tr class="@(item.IsValid ? "" : "table-warning")">
+                                <td>
+                                    @if (!item.IsValid)
+                                    {
+                                        <i class="bi bi-exclamation-triangle text-warning me-1"></i>
+                                    }
+                                    @item.Nom
+                                </td>
+                                <td>@item.DateDebut</td>
+                                <td>@item.DateFin</td>
+                                <td>
+                                    @if (item.IsValid && DateTime.TryParse(item.DateDebut, out var debut) && DateTime.TryParse(item.DateFin, out var fin))
+                                    {
+                                        <span class="badge bg-info">@((fin - debut).Days + 1) jour(s)</span>
+                                    }
+                                </td>
+                                <td>@item.Raison</td>
+                                <td>
+                                    <span class="badge @GetTypeBadgeClass(item.Type)">
+                                        @(string.IsNullOrEmpty(item.Type) ? "annuel" : item.Type)
+                                    </span>
+                                </td>
+                                <td>
+                                    @if (item.IsValid)
+                                    {
+                                        <span class="badge bg-success">Valide</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-warning">Erreur</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            @if (previewData.Count > 10)
+            {
+                <div class="card-footer text-muted text-center">
+                    ... et @(previewData.Count - 10) ligne(s) supplémentaire(s)
+                </div>
+            }
+        </div>
+    </div>
+}
+
+<!-- Résultats de validation -->
+@if (validationResults.Any())
+{
+    <div class="card card-modern mb-4">
+        <div class="card-header bg-transparent">
+            <h5 class="mb-0">
+                <i class="bi bi-clipboard-check me-2"></i>
+                Résultats de validation
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-3">
+                    <div class="text-center p-3 bg-success bg-opacity-10 rounded">
+                        <i class="bi bi-check-circle fs-2 text-success"></i>
+                        <h5 class="mt-2 text-success">@validationResults.Count(x => x.IsValid)</h5>
+                        <small>Lignes valides</small>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-center p-3 bg-warning bg-opacity-10 rounded">
+                        <i class="bi bi-exclamation-triangle fs-2 text-warning"></i>
+                        <h5 class="mt-2 text-warning">@validationResults.Count(x => !x.IsValid)</h5>
+                        <small>Lignes avec erreurs</small>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-center p-3 bg-info bg-opacity-10 rounded">
+                        <i class="bi bi-people fs-2 text-info"></i>
+                        <h5 class="mt-2 text-info">@validationResults.Where(x => x.IsValid).Select(x => x.Nom).Distinct().Count()</h5>
+                        <small>Employés concernés</small>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-center p-3 bg-primary bg-opacity-10 rounded">
+                        <i class="bi bi-calendar-event fs-2 text-primary"></i>
+                        <h5 class="mt-2 text-primary">@GetTotalDays()</h5>
+                        <small>Total jours de congé</small>
+                    </div>
+                </div>
+            </div>
+
+            @if (validationResults.Any(x => !x.IsValid))
+            {
+                <div class="alert alert-warning mt-3">
+                    <h6><i class="bi bi-exclamation-triangle me-2"></i>Erreurs détectées :</h6>
+                    <ul class="mb-0">
+                        @foreach (var error in validationResults.Where(x => !x.IsValid).Take(5))
+                        {
+                            <li>Ligne @(validationResults.IndexOf(error) + 1): @error.ErrorMessage</li>
+                        }
+                    </ul>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+<!-- Actions -->
+@if (validationResults.Any(x => x.IsValid))
+{
+    <div class="card card-modern">
+        <div class="card-body text-center">
+            <h5>Confirmer l'import</h5>
+            <p class="text-muted">
+                @validationResults.Count(x => x.IsValid) congé(s) valide(s) seront importés dans la base de données.
+                Les données existantes pour les mêmes périodes seront remplacées.
+            </p>
+
+            <div class="d-flex gap-2 justify-content-center">
+                <button class="btn btn-success btn-modern"
+                        @onclick="ConfirmImport"
+                        disabled="@isUploading">
+                    <i class="bi bi-check-circle me-2"></i>
+                    Confirmer l'import
+                </button>
+
+                <button class="btn btn-outline-secondary btn-modern"
+                        @onclick="ClearData">
+                    <i class="bi bi-x-circle me-2"></i>
+                    Annuler
+                </button>
+
+                <button class="btn btn-primary btn-modern"
+                        @onclick="GoToPlanning">
+                    <i class="bi bi-calendar3 me-2"></i>
+                    Voir le planning
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private IBrowserFile? selectedFile;
+    private bool isUploading = false;
+    private List<CongeCsvPreview> previewData = new();
+    private List<CongeCsvPreview> validationResults = new();
+
+    private async Task HandleFileUpload(InputFileChangeEventArgs e)
+    {
+        selectedFile = e.File;
+        previewData.Clear();
+        validationResults.Clear();
+        StateHasChanged();
+
+        if (selectedFile != null)
+        {
+            ToastService.ShowInfo("Fichier sélectionné. Cliquez sur 'Traiter le fichier' pour continuer.", "Fichier prêt");
+        }
+    }
+
+    private async Task ProcessFile()
+    {
+        if (selectedFile == null) return;
+
+        try
+        {
+            isUploading = true;
+            StateHasChanged();
+
+            // Lire le fichier CSV
+            using var reader = new StreamReader(selectedFile.OpenReadStream());
+            using var csv = new CsvReader(reader, CultureInfo.InvariantCulture);
+
+            var records = csv.GetRecords<CongeCsv>().ToList();
+
+            // Valider et prévisualiser les données
+            previewData.Clear();
+            validationResults.Clear();
+
+            foreach (var record in records)
+            {
+                var preview = new CongeCsvPreview
+                    {
+                        Nom = record.Nom?.Trim() ?? "",
+                        DateDebut = record.DateDebut?.Trim() ?? "",
+                        DateFin = record.DateFin?.Trim() ?? "",
+                        Raison = record.Raison?.Trim() ?? "",
+                        Type = record.Type?.Trim() ?? ""
+                    };
+
+                // Validation
+                var errors = new List<string>();
+
+                if (string.IsNullOrWhiteSpace(preview.Nom))
+                    errors.Add("Nom manquant");
+
+                if (!DateTime.TryParse(preview.DateDebut, out var dateDebut))
+                    errors.Add("Date de début invalide");
+
+                if (!DateTime.TryParse(preview.DateFin, out var dateFin))
+                    errors.Add("Date de fin invalide");
+
+                if (DateTime.TryParse(preview.DateDebut, out var deb) &&
+                    DateTime.TryParse(preview.DateFin, out var fin) &&
+                    deb > fin)
+                    errors.Add("Date de début postérieure à la date de fin");
+
+                preview.IsValid = !errors.Any();
+                preview.ErrorMessage = string.Join(", ", errors);
+
+                previewData.Add(preview);
+                validationResults.Add(preview);
+            }
+
+            if (validationResults.Any())
+            {
+                ToastService.ShowSuccess($"Fichier traité: {validationResults.Count(x => x.IsValid)} ligne(s) valide(s)", "Traitement terminé");
+            }
+            else
+            {
+                ToastService.ShowWarning("Aucune donnée trouvée dans le fichier", "Fichier vide");
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur lors du traitement: {ex.Message}", "Erreur de traitement");
+        }
+        finally
+        {
+            isUploading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ConfirmImport()
+    {
+        if (!validationResults.Any(x => x.IsValid)) return;
+
+        try
+        {
+            isUploading = true;
+            StateHasChanged();
+
+            // Convertir les données valides en format pour l'import
+            var validConges = validationResults
+                .Where(x => x.IsValid)
+                .Select(x => new CongeCsv
+                    {
+                        Nom = x.Nom,
+                        DateDebut = x.DateDebut,
+                        DateFin = x.DateFin,
+                        Raison = x.Raison,
+                        Type = x.Type
+                    })
+                .ToList();
+
+            var success = await PlanningService.SaveCongesToDbAsync(validConges);
+
+            if (success)
+            {
+                ToastService.ShowSuccess($"✅ {validConges.Count} congé(s) importé(s) avec succès!", "Import réussi");
+                ClearData();
+
+                // Rediriger vers le planning après un délai
+                await Task.Delay(2000);
+                Navigation.NavigateTo("/planning");
+            }
+            else
+            {
+                ToastService.ShowError("Erreur lors de l'import en base de données", "Erreur d'import");
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur lors de l'import: {ex.Message}", "Erreur");
+        }
+        finally
+        {
+            isUploading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ClearData()
+    {
+        selectedFile = null;
+        previewData.Clear();
+        validationResults.Clear();
+        StateHasChanged();
+    }
+
+    private void GoToPlanning()
+    {
+        Navigation.NavigateTo("/planning");
+    }
+
+    private string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024:F1} KB";
+        return $"{bytes / (1024 * 1024):F1} MB";
+    }
+
+    private string GetTypeBadgeClass(string? type)
+    {
+        return type?.ToLower() switch
+        {
+            "maladie" => "bg-warning",
+            "maternité" or "paternité" => "bg-info",
+            "personnel" => "bg-secondary",
+            "formation" => "bg-success",
+            _ => "bg-primary"
+        };
+    }
+
+    private int GetTotalDays()
+    {
+        return validationResults
+            .Where(x => x.IsValid)
+            .Where(x => DateTime.TryParse(x.DateDebut, out var debut) && DateTime.TryParse(x.DateFin, out var fin))
+            .Sum(x =>
+            {
+                DateTime.TryParse(x.DateDebut, out var debut);
+                DateTime.TryParse(x.DateFin, out var fin);
+                return (fin - debut).Days + 1;
+            });
+    }
+
+    // Classe pour la prévisualisation
+    public class CongeCsvPreview
+    {
+        public string Nom { get; set; } = "";
+        public string DateDebut { get; set; } = "";
+        public string DateFin { get; set; } = "";
+        public string Raison { get; set; } = "";
+        public string Type { get; set; } = "";
+        public bool IsValid { get; set; }
+        public string ErrorMessage { get; set; } = "";
+    }
+}

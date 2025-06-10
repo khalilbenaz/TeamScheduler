@@ -1,0 +1,560 @@
+@page "/rotation"
+@using PlanningPresenceBlazor.Services
+@using Microsoft.EntityFrameworkCore
+@using PlanningPresenceBlazor.Data
+@using Microsoft.JSInterop
+@inject PlanningService PlanningService
+@inject ToastService ToastService
+@inject PlanningDbContext DbContext
+@inject IJSRuntime JS
+
+<!-- En-tête de page -->
+<div class="page-header">
+    <h1 class="page-title">
+        <i class="bi bi-arrow-repeat"></i>
+        Démonstration de la Rotation
+    </h1>
+    <p class="page-subtitle">Visualisez comment le planning varie d'une semaine à l'autre</p>
+</div>
+
+<!-- Contrôles -->
+<div class="card card-modern mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label fw-bold">Semaine de départ</label>
+                <input type="date" @bind="startDate" class="form-control form-control-modern" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label fw-bold">Nombre de semaines</label>
+                <select @bind="numberOfWeeks" class="form-select form-control-modern">
+                    <option value="2">2 semaines</option>
+                    <option value="3">3 semaines</option>
+                    <option value="4">4 semaines</option>
+                    <option value="6">6 semaines</option>
+                    <option value="8">8 semaines</option>
+                    <option value="12">12 semaines</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <button class="btn btn-primary btn-modern" @onclick="GenerateRotationDemo" disabled="@isLoading">
+                    @if (isLoading)
+                    {
+                        <div class="spinner-border spinner-border-sm me-2"></div>
+                    }
+                    else
+                    {
+                        <i class="bi bi-play-fill me-2"></i>
+                    }
+                    Générer la démonstration
+                </button>
+                <button class="btn btn-outline-secondary btn-modern ms-2" @onclick="ClearResults">
+                    <i class="bi bi-x-circle me-2"></i>Effacer
+                </button>
+            </div>
+            <div class="col-md-3">
+                @if (rotationResults.Any())
+                {
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-success btn-modern" @onclick="ExportRotationCsv" disabled="@isExporting">
+                            @if (isExporting)
+                            {
+                                <div class="spinner-border spinner-border-sm me-2"></div>
+                            }
+                            else
+                            {
+                                <i class="bi bi-download me-2"></i>
+                            }
+                            Export Rotation
+                        </button>
+                        <button class="btn btn-outline-info btn-modern" @onclick="SendNotifications" disabled="@isSendingNotifications">
+                            @if (isSendingNotifications)
+                            {
+                                <div class="spinner-border spinner-border-sm me-2"></div>
+                            }
+                            else
+                            {
+                                <i class="bi bi-send me-2"></i>
+                            }
+                            Notifier
+                        </button>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Statistiques globales -->
+@if (rotationResults.Any())
+{
+    <div class="card card-modern mb-4">
+        <div class="card-header bg-info text-white">
+            <h5 class="mb-0">
+                <i class="bi bi-graph-up me-2"></i>
+                Analyse de la Rotation sur @numberOfWeeks Semaines
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-2">
+                    <div class="stat-item">
+                        <div class="stat-value text-primary">@GetTotalEmployeeWeeks()</div>
+                        <div class="stat-label">Employé-semaines</div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="stat-item">
+                        <div class="stat-value text-success">@GetTotalPresences()</div>
+                        <div class="stat-label">Total présences</div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="stat-item">
+                        <div class="stat-value text-info">@GetAveragePresencesPerWeek():F1</div>
+                        <div class="stat-label">Moy./semaine</div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="stat-item">
+                        <div class="stat-value text-warning">@GetRotationVariability():F1%</div>
+                        <div class="stat-label">Variabilité</div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="stat-item">
+                        <div class="stat-value text-secondary">@GetEquityScore():F1%</div>
+                        <div class="stat-label">Équité</div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="stat-item">
+                        <div class="stat-value text-primary">@GetCompliantWeeks()</div>
+                        <div class="stat-label">Semaines OK</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Grille de comparaison des plannings -->
+@if (rotationResults.Any())
+{
+    <div class="row">
+        @foreach (var (weekResult, index) in rotationResults.Select((r, i) => (r, i)))
+        {
+            <div class="col-md-6 mb-4">
+                <div class="card card-modern">
+                    <div class="card-header @GetWeekHeaderClass(index)">
+                        <h6 class="mb-0 text-white">
+                            <i class="bi bi-calendar-week me-2"></i>
+                            Semaine #@GetWeekNumber(weekResult.WeekStart)
+                            (@weekResult.WeekStart.ToString("dd/MM") - @weekResult.WeekStart.AddDays(4).ToString("dd/MM"))
+                        </h6>
+                    </div>
+                    <div class="card-body p-2">
+                        <div class="table-responsive">
+                            <table class="table table-sm mb-0">
+                                <thead>
+                                    <tr>
+                                        <th style="font-size: 0.8rem;">Employé</th>
+                                        @foreach (var day in WeekDays)
+                                        {
+                                            <th class="text-center" style="font-size: 0.7rem;">
+                                                @day.Substring(0, 2)
+                                            </th>
+                                        }
+                                        <th class="text-center" style="font-size: 0.7rem;">Tot</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var employee in weekResult.Planning.OrderBy(x => x.Key))
+                                    {
+                                        var presenceCount = employee.Value.Count(x => x.Value.Status == PresenceStatus.Present);
+                                        <tr style="font-size: 0.75rem;">
+                                            <td class="fw-bold">@employee.Key</td>
+                                            @foreach (var day in WeekDays)
+                                            {
+                                                var presence = employee.Value[day];
+                                                <td class="text-center">
+                                                    @if (presence.Status == PresenceStatus.Present)
+                                                    {
+                                                        <span class="badge bg-success" style="font-size: 0.6rem;">✓</span>
+                                                    }
+                                                    else if (presence.Status == PresenceStatus.Conge)
+                                                    {
+                                                        <span class="badge bg-warning" style="font-size: 0.6rem;">C</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="text-muted">-</span>
+                                                    }
+                                                </td>
+                                            }
+                                            <td class="text-center">
+                                                <span class="badge @(presenceCount >= 3 ? "bg-success" : "bg-danger")" style="font-size: 0.6rem;">
+                                                    @presenceCount
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                                <tfoot>
+                                    <tr style="font-size: 0.7rem;">
+                                        <th>Total/jour</th>
+                                        @foreach (var day in WeekDays)
+                                        {
+                                            var dayPresences = weekResult.Planning.Values.Count(p => p[day].Status == PresenceStatus.Present);
+                                            var isValid = ValidateDayConstraint(day, dayPresences, weekResult.Planning);
+                                            <th class="text-center">
+                                                <span class="badge @(isValid ? "bg-success" : "bg-danger")" style="font-size: 0.6rem;">
+                                                    @dayPresences
+                                                </span>
+                                            </th>
+                                        }
+                                        <th class="text-center">
+                                            <span class="badge bg-primary" style="font-size: 0.6rem;">
+                                                @weekResult.Planning.SelectMany(x => x.Value.Values).Count(x => x.Status == PresenceStatus.Present)
+                                            </span>
+                                        </th>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+
+                        @if (weekResult.Warnings.Any())
+                        {
+                            <div class="alert alert-warning p-2 mt-2 mb-0" style="font-size: 0.75rem;">
+                                <small>⚠️ @weekResult.Warnings.Count avertissement(s)</small>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+<!-- Analyse détaillée de l'équité -->
+@if (rotationResults.Any())
+{
+    <div class="card card-modern mt-4">
+        <div class="card-header bg-secondary text-white">
+            <h5 class="mb-0">
+                <i class="bi bi-balance-scale me-2"></i>
+                Analyse d'Équité de la Rotation
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-modern">
+                    <thead>
+                        <tr>
+                            <th>Employé</th>
+                            @for (int i = 0; i < numberOfWeeks; i++)
+                            {
+                                <th class="text-center">Semaine @(i + 1)</th>
+                            }
+                            <th class="text-center">Total</th>
+                            <th class="text-center">Moyenne</th>
+                            <th class="text-center">Écart</th>
+                            <th class="text-center">Équité</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var employee in GetEmployeeRotationStats())
+                        {
+                            <tr>
+                                <td class="fw-bold">@employee.Name</td>
+                                @foreach (var weekPresences in employee.WeeklyPresences)
+                                {
+                                    <td class="text-center">
+                                        <span class="badge @(weekPresences >= 3 ? "bg-success" : weekPresences >= 2 ? "bg-warning" : "bg-danger")">
+                                            @weekPresences
+                                        </span>
+                                    </td>
+                                }
+                                <td class="text-center">
+                                    <span class="badge bg-primary">@employee.Total</span>
+                                </td>
+                                <td class="text-center">@employee.Average.ToString("F1")</td>
+                                <td class="text-center">
+                                    <span class="badge @(employee.StandardDeviation < 1 ? "bg-success" : employee.StandardDeviation < 1.5 ? "bg-warning" : "bg-danger")">
+                                        @employee.StandardDeviation.ToString("F1")
+                                    </span>
+                                </td>
+                                <td class="text-center">
+                                    @{
+                                        var equityScore = employee.StandardDeviation < 1 ? "Excellent" :
+                                        employee.StandardDeviation < 1.5 ? "Bon" : "À améliorer";
+                                        var equityClass = employee.StandardDeviation < 1 ? "text-success" :
+                                        employee.StandardDeviation < 1.5 ? "text-warning" : "text-danger";
+                                    }
+                                    <span class="@equityClass fw-bold">@equityScore</span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .stat-item {
+        text-align: center;
+        padding: 1rem;
+    }
+
+    .stat-value {
+        font-size: 1.5rem;
+        font-weight: bold;
+        line-height: 1;
+    }
+
+    .stat-label {
+        font-size: 0.75rem;
+        color: #6c757d;
+        margin-top: 0.25rem;
+    }
+</style>
+
+@code {
+    private DateTime startDate = DateTime.Today;
+    private int numberOfWeeks = 4;
+    private bool isLoading = false;
+    private bool isExporting = false;
+    private bool isSendingNotifications = false;
+    private List<PlanningResult> rotationResults = new();
+    private static readonly string[] WeekDays = { "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi" };
+
+    protected override void OnInitialized()
+    {
+        // Commencer par un lundi
+        startDate = GetMondayOfWeek(DateTime.Today);
+    }
+
+    private async Task GenerateRotationDemo()
+    {
+        try
+        {
+            isLoading = true;
+            rotationResults.Clear();
+            StateHasChanged();
+
+            var currentDate = GetMondayOfWeek(startDate);
+
+            for (int week = 0; week < numberOfWeeks; week++)
+            {
+                var weekResult = await PlanningService.GeneratePlanningAsync(currentDate);
+                rotationResults.Add(weekResult);
+                currentDate = currentDate.AddDays(7);
+            }
+
+            ToastService.ShowSuccess($"🔄 Rotation générée pour {numberOfWeeks} semaines", "Démonstration terminée");
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur: {ex.Message}", "Erreur de génération");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ClearResults()
+    {
+        rotationResults.Clear();
+        StateHasChanged();
+    }
+
+    private async Task ExportRotationCsv()
+    {
+        try
+        {
+            isExporting = true;
+            StateHasChanged();
+
+            var csvData = await PlanningService.ExportRotationToCsvAsync(rotationResults);
+            var fileName = $"rotation_{startDate:yyyy-MM-dd}_{numberOfWeeks}semaines.csv";
+
+            await JS.InvokeVoidAsync("downloadFile", fileName, Convert.ToBase64String(csvData), "text/csv");
+            ToastService.ShowSuccess($"Rotation exportée: {fileName}", "Export réussi");
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur lors de l'export: {ex.Message}", "Erreur d'export");
+        }
+        finally
+        {
+            isExporting = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SendNotifications()
+    {
+        try
+        {
+            isSendingNotifications = true;
+            StateHasChanged();
+
+            if (!rotationResults.Any())
+            {
+                ToastService.ShowWarning("Aucun planning à notifier", "Rien à envoyer");
+                return;
+            }
+
+            // Prendre la première semaine pour les notifications
+            var firstWeek = rotationResults.First();
+            var notifications = PlanningService.GeneratePresenceNotifications(firstWeek.Planning, firstWeek.WeekStart);
+
+            if (notifications.Any())
+            {
+                ToastService.ShowInfo($"Génération de {notifications.Count} notification(s) - Fonctionnalité d'envoi à implémenter", "Notifications prêtes");
+
+                // TODO: Intégrer avec NotificationService pour l'envoi réel
+                // var notificationService = new NotificationService(...);
+                // await notificationService.SendPlanningNotificationsAsync(notifications, NotificationMethod.Email);
+            }
+            else
+            {
+                ToastService.ShowWarning("Aucune présence à notifier", "Rien à envoyer");
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur: {ex.Message}", "Erreur de notification");
+        }
+        finally
+        {
+            isSendingNotifications = false;
+            StateHasChanged();
+        }
+    }
+
+    // Méthodes utilitaires
+    private DateTime GetMondayOfWeek(DateTime date)
+    {
+        int daysFromMonday = ((int)date.DayOfWeek - 1 + 7) % 7;
+        return date.AddDays(-daysFromMonday);
+    }
+
+    private int GetWeekNumber(DateTime date)
+    {
+        var jan1 = new DateTime(date.Year, 1, 1);
+        var cal = System.Globalization.CultureInfo.CurrentCulture.Calendar;
+        return cal.GetWeekOfYear(date, System.Globalization.CalendarWeekRule.FirstFourDayWeek, DayOfWeek.Monday);
+    }
+
+    private string GetWeekHeaderClass(int index)
+    {
+        var colors = new[] { "bg-primary", "bg-success", "bg-info", "bg-warning", "bg-danger", "bg-secondary", "bg-dark", "bg-primary" };
+        return colors[index % colors.Length];
+    }
+
+    private bool ValidateDayConstraint(string day, int presences, Dictionary<string, Dictionary<string, PresenceInfo>> planning)
+    {
+        if (new[] { "Lundi", "Mardi", "Vendredi" }.Contains(day))
+        {
+            return presences == 2;
+        }
+        else
+        {
+            // Pour mercredi et jeudi, accepter 0 à 3 personnes
+            return presences >= 0 && presences <= 3;
+        }
+    }
+
+    // Méthodes de statistiques
+    private int GetTotalEmployeeWeeks()
+    {
+        return rotationResults.Sum(r => r.Planning.Count);
+    }
+
+    private int GetTotalPresences()
+    {
+        return rotationResults.Sum(r => r.Planning.SelectMany(x => x.Value.Values).Count(x => x.Status == PresenceStatus.Present));
+    }
+
+    private double GetAveragePresencesPerWeek()
+    {
+        return rotationResults.Any() ? (double)GetTotalPresences() / rotationResults.Count : 0;
+    }
+
+    private double GetRotationVariability()
+    {
+        if (rotationResults.Count < 2) return 0;
+
+        var weeklyTotals = rotationResults.Select(r =>
+            r.Planning.SelectMany(x => x.Value.Values).Count(x => x.Status == PresenceStatus.Present)
+        ).ToList();
+
+        var mean = weeklyTotals.Average();
+        var variance = weeklyTotals.Select(x => Math.Pow(x - mean, 2)).Average();
+        var stdDev = Math.Sqrt(variance);
+
+        return mean > 0 ? (stdDev / mean) * 100 : 0;
+    }
+
+    private double GetEquityScore()
+    {
+        if (!rotationResults.Any()) return 0;
+
+        var employeeStats = GetEmployeeRotationStats();
+        var avgStdDev = employeeStats.Average(e => e.StandardDeviation);
+
+        // Score d'équité: 100% = écart-type moyen < 0.5, 0% = écart-type > 2
+        return Math.Max(0, Math.Min(100, (2 - avgStdDev) / 2 * 100));
+    }
+
+    private int GetCompliantWeeks()
+    {
+        return rotationResults.Count(r => r.Planning.All(emp =>
+            emp.Value.Count(day => day.Value.Status == PresenceStatus.Present) >= 3));
+    }
+
+    private List<EmployeeRotationStats> GetEmployeeRotationStats()
+    {
+        if (!rotationResults.Any()) return new List<EmployeeRotationStats>();
+
+        var allEmployees = rotationResults.First().Planning.Keys.ToList();
+        var stats = new List<EmployeeRotationStats>();
+
+        foreach (var employee in allEmployees)
+        {
+            var weeklyPresences = rotationResults.Select(r =>
+                r.Planning[employee].Count(day => day.Value.Status == PresenceStatus.Present)
+            ).ToList();
+
+            var total = weeklyPresences.Sum();
+            var average = weeklyPresences.Average();
+            var variance = weeklyPresences.Select(x => Math.Pow(x - average, 2)).Average();
+            var stdDev = Math.Sqrt(variance);
+
+            stats.Add(new EmployeeRotationStats
+                {
+                    Name = employee,
+                    WeeklyPresences = weeklyPresences,
+                    Total = total,
+                    Average = average,
+                    StandardDeviation = stdDev
+                });
+        }
+
+        return stats;
+    }
+
+    public class EmployeeRotationStats
+    {
+        public string Name { get; set; } = "";
+        public List<int> WeeklyPresences { get; set; } = new();
+        public int Total { get; set; }
+        public double Average { get; set; }
+        public double StandardDeviation { get; set; }
+    }
+}
