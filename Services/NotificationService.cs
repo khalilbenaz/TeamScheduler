@@ -88,6 +88,69 @@ namespace PlanningPresenceBlazor.Services
             return result;
         }
 
+        public async Task<bool> TestTeamsWebhookAsync()
+        {
+            try
+            {
+                var teamsWebhook = _configuration["Teams:WebhookUrl"];
+
+                if (string.IsNullOrEmpty(teamsWebhook))
+                {
+                    _logger.LogWarning("URL webhook Teams non configurée");
+                    return false;
+                }
+
+                using var httpClient = new HttpClient();
+                httpClient.Timeout = TimeSpan.FromSeconds(10);
+
+                // Message de test avec format adapté à Power Automate
+                var testMessage = new
+                {
+                    title = "🧪 Test du système de notification",
+                    employeeName = "Test User",
+                    employeeEmail = "test@example.com",
+                    message = "Ceci est un message de test du système Planning Présence. Si vous recevez ce message, la configuration fonctionne correctement !",
+                    presentDays = new[] { "Lundi 10/06", "Mercredi 12/06", "Vendredi 14/06" },
+                    totalPresences = 3,
+                    weekStart = DateTime.Today.ToString("dd/MM/yyyy"),
+                    timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                    testMode = true,
+                    // Ajout d'un message pré-formaté pour Power Automate
+                    formattedMessage = "🧪 **Test du système de notification**\n\nBonjour **Test User** ! 👋\n\nCeci est un message de test du système Planning Présence. Si vous recevez ce message, la configuration fonctionne correctement !\n\n**📋 Jours de présence :**\n✅ Lundi 10/06\n✅ Mercredi 12/06\n✅ Vendredi 14/06\n\n**📊 Total : 3 jour(s)**\n\n📌 **Important :**\n• Notez ces dates dans votre agenda\n• Prévenez en cas d'empêchement\n• Consultez l'application planning pour les détails\n\nBonne semaine ! 🌟"
+                };
+
+                var jsonContent = JsonSerializer.Serialize(testMessage, new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                    WriteIndented = true
+                });
+
+                _logger.LogInformation("Test webhook Teams avec contenu: {Json}", jsonContent);
+
+                var content = new StringContent(jsonContent, System.Text.Encoding.UTF8, "application/json");
+
+                var response = await httpClient.PostAsync(teamsWebhook, content);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    _logger.LogInformation("Test webhook Teams réussi - Status: {Status}", response.StatusCode);
+                    return true;
+                }
+                else
+                {
+                    var responseContent = await response.Content.ReadAsStringAsync();
+                    _logger.LogError("Test webhook Teams échoué - Status: {Status}, Content: {Content}",
+                        response.StatusCode, responseContent);
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erreur lors du test webhook Teams");
+                return false;
+            }
+        }
+
         private async Task<bool> SendEmailNotificationAsync(Employe employee, PresenceNotification notification, bool testMode)
         {
             if (string.IsNullOrEmpty(employee.Email))
@@ -222,41 +285,63 @@ namespace PlanningPresenceBlazor.Services
             {
                 _logger.LogInformation("MODE TEST - Teams à {TeamsId}: Planning {Week}",
                     employee.TeamsId, notification.WeekStart.ToString("dd/MM"));
-                await Task.Delay(400); // Simule le délai d'envoi
-                return true;
+                return await TestTeamsWebhookAsync(); // Utilise le test réel
             }
 
             try
             {
                 var teamsWebhook = _configuration["Teams:WebhookUrl"];
-                var tenantId = _configuration["Teams:TenantId"];
-                var clientId = _configuration["Teams:ClientId"];
-                var clientSecret = _configuration["Teams:ClientSecret"];
 
                 if (string.IsNullOrEmpty(teamsWebhook))
                 {
-                    _logger.LogWarning("Configuration Teams manquante");
+                    _logger.LogWarning("Configuration Teams WebhookUrl manquante");
                     return false;
                 }
 
                 using var httpClient = new HttpClient();
                 httpClient.Timeout = TimeSpan.FromSeconds(30);
 
-                var teamsMessage = GenerateTeamsMessage(notification);
-                var jsonContent = JsonSerializer.Serialize(teamsMessage);
+                // Générer le message formaté
+                var formattedMessage = GenerateFormattedTeamsMessage(notification);
+
+                // Message structuré pour Power Automate
+                var powerAutomateMessage = new
+                {
+                    title = $"🗓️ Planning semaine du {notification.WeekStart:dd/MM/yyyy}",
+                    employeeName = notification.EmployeeName,
+                    employeeTeamsId = employee.TeamsId,
+                    employeeEmail = employee.Email,
+                    weekStart = notification.WeekStart.ToString("dd/MM/yyyy"),
+                    weekEnd = notification.WeekStart.AddDays(4).ToString("dd/MM/yyyy"),
+                    presentDays = notification.PresentDays,
+                    totalPresences = notification.TotalPresences,
+                    message = notification.Message,
+                    formattedMessage = formattedMessage, // Message pré-formaté
+                    timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+                };
+
+                var jsonContent = JsonSerializer.Serialize(powerAutomateMessage, new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                    WriteIndented = true
+                });
+
+                _logger.LogDebug("Envoi message Teams Power Automate: {Json}", jsonContent);
+
                 var content = new StringContent(jsonContent, System.Text.Encoding.UTF8, "application/json");
 
                 var response = await httpClient.PostAsync(teamsWebhook, content);
 
                 if (response.IsSuccessStatusCode)
                 {
-                    _logger.LogInformation("Message Teams envoyé à {Employee}", employee.Nom);
+                    _logger.LogInformation("Message Teams envoyé avec succès à {Employee} via Power Automate", employee.Nom);
                     return true;
                 }
                 else
                 {
+                    var responseContent = await response.Content.ReadAsStringAsync();
                     _logger.LogError("Échec envoi Teams à {Employee}: {Status} - {Content}",
-                        employee.Nom, response.StatusCode, await response.Content.ReadAsStringAsync());
+                        employee.Nom, response.StatusCode, responseContent);
                     return false;
                 }
             }
@@ -267,6 +352,35 @@ namespace PlanningPresenceBlazor.Services
             }
         }
 
+        private string GenerateFormattedTeamsMessage(PresenceNotification notification)
+        {
+            var sb = new System.Text.StringBuilder();
+
+            sb.AppendLine($"🗓️ **Planning semaine du {notification.WeekStart:dd/MM/yyyy}**");
+            sb.AppendLine();
+            sb.AppendLine($"Bonjour **{notification.EmployeeName}** ! 👋");
+            sb.AppendLine();
+            sb.AppendLine($"Voici votre planning de présence pour la semaine du **{notification.WeekStart:dd/MM/yyyy}** au **{notification.WeekStart.AddDays(4):dd/MM/yyyy}** :");
+            sb.AppendLine();
+            sb.AppendLine("**📋 Jours de présence :**");
+
+            foreach (var day in notification.PresentDays)
+            {
+                sb.AppendLine($"✅ {day}");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine($"**📊 Total : {notification.TotalPresences} jour(s) de présence**");
+            sb.AppendLine();
+            sb.AppendLine("📌 **Important :**");
+            sb.AppendLine("• Notez ces dates dans votre agenda personnel");
+            sb.AppendLine("• En cas d'empêchement, prévenez au plus tôt");
+            sb.AppendLine("• Consultez l'application planning pour plus de détails");
+            sb.AppendLine();
+            sb.AppendLine("Bonne semaine ! 🌟");
+
+            return sb.ToString();
+        }
         private string GenerateEmailBody(PresenceNotification notification)
         {
             var html = $@"
