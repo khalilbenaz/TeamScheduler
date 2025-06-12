@@ -1,0 +1,792 @@
+@page "/team-planning"
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.JSInterop
+@using PlanningPresenceBlazor.Data
+@using PlanningPresenceBlazor.Services
+@using System.Text.Json
+@inject TeamPlanningService TeamPlanningService
+@inject PlanningDbContext DbContext
+@inject ToastService ToastService
+@inject NotificationService NotificationService
+@inject IJSRuntime JS
+
+<!-- En-tête de page -->
+<div class="page-header">
+    <h1 class="page-title">
+        <i class="bi bi-calendar-week"></i>
+        Planning des Équipes
+    </h1>
+    <p class="page-subtitle">Générez et gérez les plannings de présence par équipe et client</p>
+</div>
+
+<!-- Panneau de configuration -->
+<div class="card card-modern mb-4">
+    <div class="card-body">
+        <div class="row g-4 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label fw-bold">
+                    <i class="bi bi-people"></i> Équipe
+                </label>
+                <select class="form-select" @bind="selectedTeamId">
+                    <option value="0">-- Toutes les équipes --</option>
+                    @foreach (var team in teams)
+                    {
+                        <option value="@team.Id">@team.Nom (@team.Membres.Count membres)</option>
+                    }
+                </select>
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label fw-bold">
+                    <i class="bi bi-calendar3"></i> Semaine du
+                </label>
+                <InputDate @bind-Value="selectedDate" class="form-control form-control-modern" />
+                <div class="form-text">
+                    Semaine @GetWeekNumber(selectedDate) :
+                    @GetMondayOfWeek(selectedDate).ToString("dd/MM") -
+                    @GetMondayOfWeek(selectedDate).AddDays(4).ToString("dd/MM/yyyy")
+                </div>
+            </div>
+
+            <div class="col-md-2">
+                <label class="form-label fw-bold">Mode</label>
+                <select @bind="planningMode" class="form-select form-control-modern">
+                    <option value="single">Équipe unique</option>
+                    <option value="global">Toutes équipes</option>
+                    <option value="client">Vue client</option>
+                </select>
+            </div>
+
+            <div class="col-md-2">
+                <button class="btn btn-primary btn-modern w-100" @onclick="GeneratePlanning" disabled="@isGenerating">
+                    @if (isGenerating)
+                    {
+                        <div class="spinner-border spinner-border-sm me-2"></div>
+                    }
+                    else
+                    {
+                        <i class="bi bi-gear-fill me-2"></i>
+                    }
+                    Générer
+                </button>
+            </div>
+
+            <div class="col-md-2">
+                <div class="btn-group w-100">
+                    <button class="btn btn-success btn-modern" @onclick="ExportPlanning"
+                            disabled="@(!HasPlanningData() || isExporting)">
+                        <i class="bi bi-download"></i>
+                    </button>
+                    <button class="btn btn-info btn-modern" @onclick="ShowNotificationModal"
+                            disabled="@(!HasPlanningData())">
+                        <i class="bi bi-send"></i>
+                    </button>
+                    <button class="btn btn-warning btn-modern" @onclick="ShowConfigModal">
+                        <i class="bi bi-gear"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Statistiques -->
+@if (HasPlanningData())
+{
+    <div class="row mb-4">
+        <div class="col-md-2">
+            <div class="stats-card">
+                <div class="stat-value text-primary">@GetTotalEmployees()</div>
+                <div class="stat-label">Employés</div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="stats-card">
+                <div class="stat-value text-success">@GetTotalPresences()</div>
+                <div class="stat-label">Présences</div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="stats-card">
+                <div class="stat-value text-warning">@GetTotalAbsences()</div>
+                <div class="stat-label">Congés</div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="stats-card">
+                <div class="stat-value text-info">@GetCoverageRate()%</div>
+                <div class="stat-label">Couverture</div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="stats-card">
+                <div class="stat-value text-secondary">@GetAveragePresences():F1</div>
+                <div class="stat-label">Moy./jour</div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="stats-card">
+                <div class="stat-value @(HasWarnings() ? "text-danger" : "text-success")">
+                    @GetWarningsCount()
+                </div>
+                <div class="stat-label">Alertes</div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Alertes et avertissements -->
+@if (HasWarnings())
+{
+    <div class="alert warning-alert mb-4">
+        <h6><i class="bi bi-exclamation-triangle-fill me-2"></i>Avertissements</h6>
+        @foreach (var warning in GetAllWarnings())
+        {
+            <div class="mb-1">• @warning</div>
+        }
+    </div>
+}
+
+<!-- Affichage selon le mode -->
+@if (planningMode == "single" && teamPlanningResult != null)
+{
+    <!-- Mode équipe unique -->
+    <div class="card card-modern mb-4">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">
+                <i class="bi bi-people me-2"></i>
+                @teamPlanningResult.EquipeNom - Planning du
+                @teamPlanningResult.WeekStart.ToString("dd/MM") au
+                @teamPlanningResult.WeekEnd.ToString("dd/MM/yyyy")
+            </h5>
+        </div>
+        <div class="card-body p-0">
+            @RenderTeamPlanningTable(teamPlanningResult)
+        </div>
+    </div>
+
+    <!-- Affectations clients de l'équipe -->
+    @if (teamPlanningResult.PlanningParClient.Any())
+    {
+        <h5 class="mb-3">Répartition par client</h5>
+        <div class="row">
+            @foreach (var clientPlanning in teamPlanningResult.PlanningParClient)
+            {
+                <div class="col-md-6 mb-3">
+                    <div class="card card-modern">
+                        <div class="card-header bg-info text-white">
+                            <h6 class="mb-0">
+                                <i class="bi bi-building me-2"></i>@clientPlanning.Key
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            @foreach (var dayAssignment in clientPlanning.Value)
+                            {
+                                <div class="mb-2">
+                                    <strong>@dayAssignment.Jour:</strong>
+                                    @if (dayAssignment.Employes.Any())
+                                    {
+                                        <div class="d-flex flex-wrap gap-1 mt-1">
+                                            @foreach (var emp in dayAssignment.Employes)
+                                            {
+                                                <span class="badge bg-primary">@emp</span>
+                                            }
+                                            <span class="badge bg-secondary">
+                                                @dayAssignment.NombreTotal pers.
+                                            </span>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">Aucune affectation</span>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+}
+else if (planningMode == "global" && globalPlanningResult != null)
+{
+    <!-- Mode toutes équipes -->
+    @foreach (var teamResult in globalPlanningResult.TeamPlannings)
+    {
+        <div class="card card-modern mb-4">
+            <div class="card-header bg-gradient">
+                <h5 class="mb-0">
+                    <i class="bi bi-people me-2"></i>@teamResult.EquipeNom
+                </h5>
+            </div>
+            <div class="card-body p-0">
+                @RenderTeamPlanningTable(teamResult)
+            </div>
+        </div>
+    }
+}
+else if (planningMode == "client" && clientPlanningViews != null)
+{
+    <!-- Vue par client -->
+    @foreach (var clientView in clientPlanningViews)
+    {
+        <div class="card card-modern mb-4">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-building me-2"></i>@clientView.ClientNom
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-modern mb-0">
+                        <thead>
+                        <tr>
+                            <th>Jour</th>
+                            <th>Employés présents</th>
+                            <th>Équipes</th>
+                            <th>Total</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var day in WeekDays)
+                        {
+                            var presences = clientView.PresencesParJour[day];
+                            <tr>
+                                <td>
+                                    <strong>@day</strong><br>
+                                    <small>@GetDateForDay(day).ToString("dd/MM")</small>
+                                </td>
+                                <td>
+                                    @if (presences.Any())
+                                    {
+                                        <div class="d-flex flex-wrap gap-1">
+                                            @foreach (var emp in presences)
+                                            {
+                                                <span class="badge bg-primary" title="@string.Join(", ", emp.Competences)">
+                                                        @emp.Nom
+                                                    </span>
+                                            }
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">Aucun</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (presences.Any())
+                                    {
+                                        var equipes = presences.Select(p => p.Equipe).Distinct();
+                                        @foreach (var eq in equipes)
+                                        {
+                                            <span class="badge bg-info">@eq</span>
+                                        }
+                                    }
+                                </td>
+                                <td>
+                                    <span class="badge bg-secondary">@presences.Count</span>
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    }
+}
+else if (!HasPlanningData())
+{
+    <div class="card card-modern">
+        <div class="card-body text-center py-5">
+            <i class="bi bi-calendar3 fs-1 text-muted mb-3"></i>
+            <h5 class="text-muted">Aucun planning généré</h5>
+            <p class="text-muted">Sélectionnez une équipe et une date, puis cliquez sur "Générer".</p>
+        </div>
+    </div>
+}
+
+<!-- Modal de configuration -->
+@if (showConfigModal && activeConfig != null)
+{
+    <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-gear-fill me-2"></i>
+                        Configuration du planning
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseConfigModal"></button>
+                </div>
+
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <h6>Contraintes par personne</h6>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Présences minimum/semaine</label>
+                            <InputNumber @bind-Value="activeConfig.PresencesMinParPersonne"
+                                         class="form-control" min="0" max="5" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Présences maximum/semaine</label>
+                            <InputNumber @bind-Value="activeConfig.PresencesMaxParPersonne"
+                                         class="form-control" min="0" max="5" />
+                        </div>
+
+                        <div class="col-12 mt-3">
+                            <h6>Contraintes par jour</h6>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Présences minimum/jour</label>
+                            <InputNumber @bind-Value="activeConfig.PresencesMinParJour"
+                                         class="form-control" min="0" max="20" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Présences maximum/jour</label>
+                            <InputNumber @bind-Value="activeConfig.PresencesMaxParJour"
+                                         class="form-control" min="0" max="20" />
+                        </div>
+
+                        <div class="col-12 mt-3">
+                            <h6>Jours critiques</h6>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Présences minimum jours critiques</label>
+                            <InputNumber @bind-Value="activeConfig.PresencesMinJoursCritiques"
+                                         class="form-control" min="0" max="10" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Présences maximum jours critiques</label>
+                            <InputNumber @bind-Value="activeConfig.PresencesMaxJoursCritiques"
+                                         class="form-control" min="0" max="10" />
+                        </div>
+
+                        <div class="col-12 mt-3">
+                            <h6>Options</h6>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check">
+                                <InputCheckbox @bind-Value="activeConfig.RotationEquitable"
+                                               class="form-check-input" id="rotation" />
+                                <label class="form-check-label" for="rotation">
+                                    Rotation équitable
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check">
+                                <InputCheckbox @bind-Value="activeConfig.RespectCompetences"
+                                               class="form-check-input" id="competences" />
+                                <label class="form-check-label" for="competences">
+                                    Respecter compétences
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check">
+                                <InputCheckbox @bind-Value="activeConfig.OptimiserDeplacements"
+                                               class="form-check-input" id="deplacements" />
+                                <label class="form-check-label" for="deplacements">
+                                    Optimiser déplacements
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseConfigModal">
+                        Annuler
+                    </button>
+                    <button type="button" class="btn btn-primary" @onclick="SaveConfiguration">
+                        <i class="bi bi-check-circle me-2"></i>Sauvegarder
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Equipe> teams = new();
+    private DateTime selectedDate = DateTime.Today;
+    private string planningMode = "single";
+    private bool isGenerating = false;
+    private bool isExporting = false;
+    private bool showConfigModal = false;
+
+    private TeamPlanningResult? teamPlanningResult;
+    private GlobalPlanningResult? globalPlanningResult;
+    private List<ClientPlanningView>? clientPlanningViews;
+    private ConfigurationPlanning? activeConfig;
+
+    private static readonly string[] WeekDays = { "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi" };
+
+    protected override async Task OnInitializedAsync()
+    {
+        selectedDate = GetMondayOfWeek(DateTime.Today);
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        teams = await TeamPlanningService.GetAllEquipesAsync(true);
+        activeConfig = await TeamPlanningService.GetActiveConfigurationAsync();
+        StateHasChanged();
+    }
+
+    private int _selectedTeamId; // Le champ "backing" réel
+
+    private int selectedTeamId   // La propriété qui sera liée avec @bind
+    {
+        get => _selectedTeamId;
+        set
+        {
+            if (_selectedTeamId != value)
+            {
+                _selectedTeamId = value;
+                _ = OnTeamChanged();
+            }
+        }
+    }
+   
+
+    private async Task OnTeamChanged()
+    {
+        teamPlanningResult = null;
+        globalPlanningResult = null;
+        clientPlanningViews = null;
+        StateHasChanged();
+    }
+    private async Task TeamChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int id))
+        {
+            selectedTeamId = id;
+            await OnTeamChanged();
+        }
+    }
+
+
+    private async Task GeneratePlanning()
+    {
+        try
+        {
+            isGenerating = true;
+            var monday = GetMondayOfWeek(selectedDate);
+
+            switch (planningMode)
+            {
+                case "single":
+                    if (selectedTeamId > 0)
+                    {
+                        teamPlanningResult = await TeamPlanningService.GenerateTeamPlanningAsync(selectedTeamId, monday);
+                        ToastService.ShowSuccess("Planning d'équipe généré avec succès", "Génération terminée");
+                    }
+                    else
+                    {
+                        ToastService.ShowWarning("Veuillez sélectionner une équipe", "Sélection requise");
+                    }
+                    break;
+
+                case "global":
+                    globalPlanningResult = await TeamPlanningService.GenerateGlobalPlanningAsync(monday);
+                    ToastService.ShowSuccess($"Planning généré pour {globalPlanningResult.TeamPlannings.Count} équipe(s)", "Génération terminée");
+                    break;
+
+                case "client":
+                    clientPlanningViews = await TeamPlanningService.GetClientPlanningViewAsync(monday);
+                    ToastService.ShowSuccess($"Vue client générée pour {clientPlanningViews.Count} client(s)", "Génération terminée");
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur lors de la génération: {ex.Message}", "Erreur");
+        }
+        finally
+        {
+            isGenerating = false;
+            StateHasChanged();
+        }
+    }
+
+    private RenderFragment RenderTeamPlanningTable(TeamPlanningResult result) => builder =>
+    {
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", "table-responsive");
+
+        builder.OpenElement(2, "table");
+        builder.AddAttribute(3, "class", "table table-modern mb-0");
+
+        // Header
+        builder.OpenElement(4, "thead");
+        builder.OpenElement(5, "tr");
+
+        builder.OpenElement(6, "th");
+        builder.AddAttribute(7, "class", "fw-bold");
+        builder.AddContent(8, "Employé");
+        builder.CloseElement();
+
+        foreach (var day in WeekDays)
+        {
+            builder.OpenElement(9, "th");
+            builder.AddAttribute(10, "class", "text-center fw-bold");
+            builder.AddContent(11, day);
+            builder.OpenElement(12, "br");
+            builder.CloseElement();
+            builder.OpenElement(13, "small");
+            builder.AddAttribute(14, "class", "fw-normal");
+            builder.AddContent(15, GetDateForDay(day).ToString("dd/MM"));
+            builder.CloseElement();
+            builder.CloseElement();
+        }
+
+        builder.OpenElement(16, "th");
+        builder.AddAttribute(17, "class", "text-center fw-bold");
+        builder.AddContent(18, "Total");
+        builder.CloseElement();
+
+        builder.CloseElement(); // tr
+        builder.CloseElement(); // thead
+
+        // Body
+        builder.OpenElement(19, "tbody");
+
+        foreach (var employee in result.Planning.OrderBy(x => x.Key))
+        {
+            builder.OpenElement(20, "tr");
+
+            builder.OpenElement(21, "td");
+            builder.AddAttribute(22, "class", "fw-bold");
+            builder.AddContent(23, employee.Key);
+            builder.CloseElement();
+
+            foreach (var day in WeekDays)
+            {
+                var presence = employee.Value[day];
+                builder.OpenElement(24, "td");
+                builder.AddAttribute(25, "class", "text-center");
+
+                var statusClass = presence.Status switch
+                {
+                    PresenceStatus.Present => "status-present",
+                    PresenceStatus.Conge => "status-conge",
+                    _ => "status-absent"
+                };
+
+                var statusText = presence.Status switch
+                {
+                    PresenceStatus.Present => "P",
+                    PresenceStatus.Conge => "C",
+                    _ => "-"
+                };
+
+                builder.OpenElement(26, "span");
+                builder.AddAttribute(27, "class", $"badge {statusClass}");
+                builder.AddAttribute(28, "title", presence.Note);
+                builder.AddContent(29, statusText);
+                builder.CloseElement();
+
+                builder.CloseElement(); // td
+            }
+
+            var total = employee.Value.Count(x => x.Value.Status == PresenceStatus.Present);
+            builder.OpenElement(30, "td");
+            builder.AddAttribute(31, "class", "text-center");
+            builder.OpenElement(32, "span");
+            builder.AddAttribute(33, "class", "badge bg-primary");
+            builder.AddContent(34, total);
+            builder.CloseElement();
+            builder.CloseElement();
+
+            builder.CloseElement(); // tr
+        }
+
+        builder.CloseElement(); // tbody
+
+        // Footer
+        builder.OpenElement(35, "tfoot");
+        builder.AddAttribute(36, "class", "table-light");
+        builder.OpenElement(37, "tr");
+
+        builder.OpenElement(38, "th");
+        builder.AddContent(39, "Total/jour");
+        builder.CloseElement();
+
+        foreach (var day in WeekDays)
+        {
+            var dayTotal = result.Planning.Values.Count(p => p[day].Status == PresenceStatus.Present);
+            builder.OpenElement(40, "th");
+            builder.AddAttribute(41, "class", "text-center");
+            builder.AddContent(42, dayTotal);
+            builder.CloseElement();
+        }
+
+        var grandTotal = result.Planning.Values.Sum(p => p.Count(x => x.Value.Status == PresenceStatus.Present));
+        builder.OpenElement(43, "th");
+        builder.AddAttribute(44, "class", "text-center");
+        builder.AddContent(45, grandTotal);
+        builder.CloseElement();
+
+        builder.CloseElement(); // tr
+        builder.CloseElement(); // tfoot
+
+        builder.CloseElement(); // table
+        builder.CloseElement(); // div
+    };
+
+    private async Task ExportPlanning()
+    {
+        try
+        {
+            isExporting = true;
+            var fileName = $"planning_equipes_{selectedDate:yyyy-MM-dd}.csv";
+
+            // TODO: Implémenter l'export selon le mode
+            ToastService.ShowInfo("Export en cours de développement", "À venir");
+        }
+        finally
+        {
+            isExporting = false;
+        }
+    }
+
+    private void ShowNotificationModal()
+    {
+        // TODO: Implémenter les notifications
+        ToastService.ShowInfo("Notifications en cours de développement", "À venir");
+    }
+
+    private void ShowConfigModal()
+    {
+        showConfigModal = true;
+    }
+
+    private void CloseConfigModal()
+    {
+        showConfigModal = false;
+    }
+
+    private async Task SaveConfiguration()
+    {
+        if (activeConfig != null)
+        {
+            var success = await TeamPlanningService.UpdateConfigurationAsync(activeConfig);
+            if (success)
+            {
+                ToastService.ShowSuccess("Configuration sauvegardée", "Mise à jour réussie");
+                CloseConfigModal();
+            }
+            else
+            {
+                ToastService.ShowError("Erreur lors de la sauvegarde", "Erreur");
+            }
+        }
+    }
+
+    // Méthodes utilitaires
+    private bool HasPlanningData()
+    {
+        return teamPlanningResult != null || globalPlanningResult != null || clientPlanningViews != null;
+    }
+
+    private bool HasWarnings()
+    {
+        return GetAllWarnings().Any();
+    }
+
+    private List<string> GetAllWarnings()
+    {
+        var warnings = new List<string>();
+
+        if (teamPlanningResult != null)
+            warnings.AddRange(teamPlanningResult.Warnings);
+
+        if (globalPlanningResult != null)
+        {
+            warnings.AddRange(globalPlanningResult.Errors);
+            warnings.AddRange(globalPlanningResult.TeamPlannings.SelectMany(tp => tp.Warnings));
+        }
+
+        return warnings;
+    }
+
+    private int GetWarningsCount() => GetAllWarnings().Count;
+
+    private int GetTotalEmployees()
+    {
+        if (teamPlanningResult != null)
+            return teamPlanningResult.Planning.Count;
+
+        if (globalPlanningResult != null)
+            return globalPlanningResult.TotalEmployes;
+
+        return 0;
+    }
+
+    private int GetTotalPresences()
+    {
+        if (teamPlanningResult != null)
+            return teamPlanningResult.Planning.Values.Sum(p => p.Count(x => x.Value.Status == PresenceStatus.Present));
+
+        if (globalPlanningResult != null)
+            return globalPlanningResult.TotalPresences;
+
+        return 0;
+    }
+
+    private int GetTotalAbsences()
+    {
+        if (teamPlanningResult != null)
+            return teamPlanningResult.NombreEnConge;
+
+        if (globalPlanningResult != null)
+            return globalPlanningResult.TotalEnConge;
+
+        return 0;
+    }
+
+    private int GetCoverageRate()
+    {
+        var total = GetTotalEmployees() * 5; // 5 jours
+        var presences = GetTotalPresences();
+        return total > 0 ? (presences * 100) / total : 0;
+    }
+
+    private double GetAveragePresences()
+    {
+        return GetTotalPresences() / 5.0; // 5 jours
+    }
+
+    private DateTime GetMondayOfWeek(DateTime date)
+    {
+        int daysFromMonday = ((int)date.DayOfWeek - 1 + 7) % 7;
+        return date.AddDays(-daysFromMonday);
+    }
+
+    private DateTime GetDateForDay(string day)
+    {
+        var monday = GetMondayOfWeek(selectedDate);
+        return day switch
+        {
+            "Lundi" => monday,
+            "Mardi" => monday.AddDays(1),
+            "Mercredi" => monday.AddDays(2),
+            "Jeudi" => monday.AddDays(3),
+            "Vendredi" => monday.AddDays(4),
+            _ => monday
+        };
+    }
+
+    private int GetWeekNumber(DateTime date)
+    {
+        var cal = System.Globalization.CultureInfo.CurrentCulture.Calendar;
+        return cal.GetWeekOfYear(date, System.Globalization.CalendarWeekRule.FirstFourDayWeek, DayOfWeek.Monday);
+    }
+}

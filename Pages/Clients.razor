@@ -1,0 +1,818 @@
+@page "/clients"
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.EntityFrameworkCore
+@using PlanningPresenceBlazor.Data
+@using PlanningPresenceBlazor.Services
+@inject TeamPlanningService TeamPlanningService
+@inject PlanningDbContext DbContext
+@inject ToastService ToastService
+@inject NavigationManager Navigation
+
+<!-- En-tête de page -->
+<div class="page-header">
+    <h1 class="page-title">
+        <i class="bi bi-building"></i>
+        Gestion des Clients
+    </h1>
+    <p class="page-subtitle">Gérez vos clients et leurs affectations d'équipes</p>
+</div>
+
+<!-- Actions et filtres -->
+<div class="card card-modern mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label">Rechercher</label>
+                <input type="text" class="form-control form-control-modern"
+                       placeholder="Nom, code client..."
+                       @bind="searchTerm" @bind:event="oninput" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Statut</label>
+                <select class="form-select form-control-modern" @bind="filterStatus">
+                    <option value="">Tous</option>
+                    <option value="true">Actifs</option>
+                    <option value="false">Inactifs</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Ville</label>
+                <select class="form-select form-control-modern" @bind="filterCity">
+                    <option value="">Toutes</option>
+                    @foreach (var city in GetUniqueCities())
+                    {
+                        <option value="@city">@city</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-3">
+                <button class="btn btn-primary btn-modern" @onclick="LoadData">
+                    <i class="bi bi-search me-2"></i>Filtrer
+                </button>
+                <button class="btn btn-outline-secondary btn-modern ms-2" @onclick="ClearFilters">
+                    <i class="bi bi-x-circle me-2"></i>Effacer
+                </button>
+            </div>
+            <div class="col-md-2 text-end">
+                <button class="btn btn-success btn-modern" @onclick="ShowAddClientModal">
+                    <i class="bi bi-plus-circle me-2"></i>Nouveau client
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Statistiques -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="stats-card">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-building fs-2 text-primary me-3"></i>
+                <div>
+                    <h5 class="mb-0">@clients.Count</h5>
+                    <small class="text-muted">Clients total</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stats-card">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-check-circle fs-2 text-success me-3"></i>
+                <div>
+                    <h5 class="mb-0">@clients.Count(c => c.EstActif)</h5>
+                    <small class="text-muted">Clients actifs</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stats-card">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-people fs-2 text-info me-3"></i>
+                <div>
+                    <h5 class="mb-0">@GetTotalAffectations()</h5>
+                    <small class="text-muted">Affectations actives</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stats-card">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-geo-alt fs-2 text-warning me-3"></i>
+                <div>
+                    <h5 class="mb-0">@GetUniqueCities().Count</h5>
+                    <small class="text-muted">Villes</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Liste des clients -->
+<div class="row">
+    @foreach (var client in GetFilteredClients())
+    {
+        <div class="col-md-6 mb-4">
+            <div class="card card-modern @(!client.EstActif ? "opacity-75" : "")">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="mb-0">
+                            <i class="bi bi-building me-2 text-primary"></i>
+                            @client.Nom
+                        </h5>
+                        @if (!string.IsNullOrEmpty(client.CodeClient))
+                        {
+                            <span class="badge bg-secondary">@client.CodeClient</span>
+                        }
+                    </div>
+                    <div>
+                        @if (client.EstActif)
+                        {
+                            <span class="badge bg-success">Actif</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-danger">Inactif</span>
+                        }
+                    </div>
+                </div>
+
+                <div class="card-body">
+                    <!-- Localisation -->
+                    <div class="mb-3">
+                        <i class="bi bi-geo-alt me-2 text-muted"></i>
+                        @if (!string.IsNullOrEmpty(client.Adresse))
+                        {
+                            <span>@client.Adresse, </span>
+                        }
+                        <strong>@client.Ville</strong>
+                        @if (client.DistanceKm > 0)
+                        {
+                            <span class="badge bg-light text-dark ms-2">
+                                @client.DistanceKm km - @client.TempsDeplacement min
+                            </span>
+                        }
+                    </div>
+
+                    <!-- Contact -->
+                    @if (!string.IsNullOrEmpty(client.ContactPrincipal))
+                    {
+                        <div class="mb-3">
+                            <i class="bi bi-person me-2 text-muted"></i>
+                            <strong>Contact:</strong> @client.ContactPrincipal
+                            @if (!string.IsNullOrEmpty(client.EmailContact))
+                            {
+                                <br>
+                                <i class="bi bi-envelope me-2 text-muted ms-3"></i>
+                                <a href="mailto:@client.EmailContact">@client.EmailContact</a>
+                            }
+                            @if (!string.IsNullOrEmpty(client.TelephoneContact))
+                            {
+                                <br>
+                                <i class="bi bi-telephone me-2 text-muted ms-3"></i>
+                                <a href="tel:@client.TelephoneContact">@client.TelephoneContact</a>
+                            }
+                        </div>
+                    }
+
+                    <!-- Contrat -->
+                    @if (client.DateDebutContrat.HasValue)
+                    {
+                        <div class="mb-3">
+                            <i class="bi bi-calendar-event me-2 text-muted"></i>
+                            <strong>Contrat:</strong>
+                            @client.DateDebutContrat.Value.ToString("dd/MM/yyyy")
+                            @if (client.DateFinContrat.HasValue)
+                            {
+                                <span> - @client.DateFinContrat.Value.ToString("dd/MM/yyyy")</span>
+                                @if (client.DateFinContrat.Value < DateTime.Today.AddMonths(1))
+                                {
+                                    <span class="badge bg-warning ms-2">Expire bientôt</span>
+                                }
+                            }
+                            else
+                            {
+                                <span class="badge bg-info ms-2">Indéterminé</span>
+                            }
+                        </div>
+                    }
+
+                    <!-- Affectations -->
+                    <div class="mb-3">
+                        <strong>Équipes affectées:</strong>
+                        @if (client.Affectations.Any(a => a.EstActive))
+                        {
+                            <div class="d-flex flex-wrap gap-1 mt-1">
+                                @foreach (var affectation in client.Affectations.Where(a => a.EstActive))
+                                {
+                                    <span class="badge bg-primary">
+                                        @affectation.Equipe.Nom
+                                        <span class="badge bg-light text-dark ms-1">
+                                            @affectation.NombreMinPersonnes-@affectation.NombreMaxPersonnes pers.
+                                        </span>
+                                    </span>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <span class="text-muted"> Aucune équipe affectée</span>
+                        }
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-primary btn-sm" @onclick="() => ViewClientDetails(client.Id)">
+                            <i class="bi bi-eye me-1"></i>Détails
+                        </button>
+                        <button class="btn btn-outline-primary btn-sm" @onclick="() => EditClient(client)">
+                            <i class="bi bi-pencil me-1"></i>Modifier
+                        </button>
+                        <button class="btn btn-outline-success btn-sm" @onclick="() => ManageAffectations(client)">
+                            <i class="bi bi-people me-1"></i>Affectations
+                        </button>
+                        <button class="btn btn-outline-info btn-sm" @onclick="() => ManageCompetences(client)">
+                            <i class="bi bi-award me-1"></i>Compétences
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@if (!clients.Any())
+{
+    <div class="card card-modern">
+        <div class="card-body text-center py-5">
+            <i class="bi bi-building fs-1 text-muted mb-3"></i>
+            <h5 class="text-muted">Aucun client trouvé</h5>
+            <p class="text-muted">Commencez par ajouter votre premier client.</p>
+            <button class="btn btn-primary btn-modern mt-3" @onclick="ShowAddClientModal">
+                <i class="bi bi-plus-circle me-2"></i>Ajouter un client
+            </button>
+        </div>
+    </div>
+}
+
+<!-- Modal d'ajout/modification de client -->
+@if (showClientModal)
+{
+    <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-@(editingClient?.Id > 0 ? "pencil" : "plus-circle") me-2"></i>
+                        @(editingClient?.Id > 0 ? "Modifier" : "Ajouter") un client
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseClientModal"></button>
+                </div>
+
+                <EditForm Model="editingClient" OnValidSubmit="SaveClient">
+                    <DataAnnotationsValidator />
+                    <div class="modal-body">
+                        <div class="row g-3">
+                            <!-- Informations générales -->
+                            <div class="col-12">
+                                <h6 class="border-bottom pb-2">Informations générales</h6>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label">Nom du client *</label>
+                                <InputText @bind-Value="editingClient.Nom" class="form-control" />
+                                <ValidationMessage For="@(() => editingClient.Nom)" class="text-danger" />
+                            </div>
+
+                            <div class="col-md-3">
+                                <label class="form-label">Code client</label>
+                                <InputText @bind-Value="editingClient.CodeClient" class="form-control"
+                                           placeholder="Ex: CLI001" />
+                            </div>
+
+                            <div class="col-md-3">
+                                <label class="form-label">Statut</label>
+                                <div class="form-check form-switch mt-2">
+                                    <InputCheckbox @bind-Value="editingClient.EstActif"
+                                                   class="form-check-input" id="clientActive" />
+                                    <label class="form-check-label" for="clientActive">
+                                        Client actif
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- Localisation -->
+                            <div class="col-12 mt-3">
+                                <h6 class="border-bottom pb-2">Localisation</h6>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label">Adresse</label>
+                                <InputText @bind-Value="editingClient.Adresse" class="form-control" />
+                            </div>
+
+                            <div class="col-md-3">
+                                <label class="form-label">Ville</label>
+                                <InputText @bind-Value="editingClient.Ville" class="form-control" />
+                            </div>
+
+                            <div class="col-md-3">
+                                <label class="form-label">Code postal</label>
+                                <InputText @bind-Value="editingClient.CodePostal" class="form-control" />
+                            </div>
+
+                            <div class="col-md-3">
+                                <label class="form-label">Pays</label>
+                                <InputText @bind-Value="editingClient.Pays" class="form-control" />
+                            </div>
+
+                            <div class="col-md-3">
+                                <label class="form-label">Distance (km)</label>
+                                <InputNumber @bind-Value="editingClient.DistanceKm" class="form-control" />
+                            </div>
+
+                            <div class="col-md-3">
+                                <label class="form-label">Temps déplacement (min)</label>
+                                <InputNumber @bind-Value="editingClient.TempsDeplacement" class="form-control" />
+                            </div>
+
+                            <!-- Contact -->
+                            <div class="col-12 mt-3">
+                                <h6 class="border-bottom pb-2">Contact</h6>
+                            </div>
+
+                            <div class="col-md-4">
+                                <label class="form-label">Contact principal</label>
+                                <InputText @bind-Value="editingClient.ContactPrincipal" class="form-control" />
+                            </div>
+
+                            <div class="col-md-4">
+                                <label class="form-label">Email</label>
+                                <InputText @bind-Value="editingClient.EmailContact" type="email"
+                                           class="form-control" />
+                                <ValidationMessage For="@(() => editingClient.EmailContact)" class="text-danger" />
+                            </div>
+
+                            <div class="col-md-4">
+                                <label class="form-label">Téléphone</label>
+                                <InputText @bind-Value="editingClient.TelephoneContact" type="tel"
+                                           class="form-control" />
+                                <ValidationMessage For="@(() => editingClient.TelephoneContact)" class="text-danger" />
+                            </div>
+
+                            <!-- Contrat -->
+                            <div class="col-12 mt-3">
+                                <h6 class="border-bottom pb-2">Contrat</h6>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label">Date début contrat</label>
+                                <InputDate @bind-Value="editingClient.DateDebutContrat" class="form-control" />
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label">Date fin contrat</label>
+                                <InputDate @bind-Value="editingClient.DateFinContrat" class="form-control" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @onclick="CloseClientModal">
+                            Annuler
+                        </button>
+                        <button type="submit" class="btn btn-primary" disabled="@isSaving">
+                            @if (isSaving)
+                            {
+                                <div class="spinner-border spinner-border-sm me-2"></div>
+                            }
+                            <i class="bi bi-check-circle me-1"></i>
+                            @(editingClient?.Id > 0 ? "Modifier" : "Ajouter")
+                        </button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Modal de gestion des affectations -->
+@if (showAffectationsModal && selectedClient != null)
+{
+    <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-people-fill me-2"></i>
+                        Gérer les affectations - @selectedClient.Nom
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseAffectationsModal"></button>
+                </div>
+
+                <div class="modal-body">
+                    <!-- Affectations actuelles -->
+                    <h6>Affectations actuelles</h6>
+                    <div class="table-responsive mb-4">
+                        <table class="table table-modern">
+                            <thead>
+                            <tr>
+                                <th>Équipe</th>
+                                <th>Date début</th>
+                                <th>Date fin</th>
+                                <th>Type mission</th>
+                                <th>Effectif</th>
+                                <th>Statut</th>
+                                <th>Actions</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            @foreach (var affectation in selectedClient.Affectations.OrderByDescending(a => a.DateDebut))
+                            {
+                                <tr>
+                                    <td>
+                                        <strong>@affectation.Equipe.Nom</strong>
+                                    </td>
+                                    <td>@affectation.DateDebut.ToString("dd/MM/yyyy")</td>
+                                    <td>
+                                        @if (affectation.DateFin.HasValue)
+                                        {
+                                            @affectation.DateFin.Value.ToString("dd/MM/yyyy")
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">Indéterminée</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-info">@GetTypeMissionDisplay(affectation.TypeMission)</span>
+                                    </td>
+                                    <td>
+                                        @affectation.NombreMinPersonnes - @affectation.NombreMaxPersonnes
+                                    </td>
+                                    <td>
+                                        @if (affectation.EstActive)
+                                        {
+                                            <span class="badge bg-success">Active</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-secondary">Inactive</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-primary"
+                                                @onclick="() => EditAffectation(affectation)">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-danger"
+                                                @onclick="() => DeleteAffectation(affectation)">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Nouvelle affectation -->
+                    <h6>Ajouter une affectation</h6>
+                    <div class="card">
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <div class="col-md-4">
+                                    <label class="form-label">Équipe</label>
+                                    <select @bind="newAffectation.EquipeId" class="form-select">
+                                        <option value="0">-- Sélectionner --</option>
+                                        @foreach (var equipe in availableTeams)
+                                        {
+                                            <option value="@equipe.Id">@equipe.Nom (@equipe.Membres.Count membres)</option>
+                                        }
+                                    </select>
+                                </div>
+
+                                <div class="col-md-3">
+                                    <label class="form-label">Date début</label>
+                                    <InputDate @bind-Value="newAffectation.DateDebut" class="form-control" />
+                                </div>
+
+                                <div class="col-md-3">
+                                    <label class="form-label">Type mission</label>
+                                    <select @bind="newAffectation.TypeMission" class="form-select">
+                                        @foreach (var type in Enum.GetValues<TypeMission>())
+                                        {
+                                            <option value="@type">@GetTypeMissionDisplay(type)</option>
+                                        }
+                                    </select>
+                                </div>
+
+                                <div class="col-md-2">
+                                    <label class="form-label">Min/Max pers.</label>
+                                    <div class="input-group">
+                                        <input type="number" @bind="newAffectation.NombreMinPersonnes"
+                                               class="form-control" min="1" max="10" />
+                                        <span class="input-group-text">-</span>
+                                        <input type="number" @bind="newAffectation.NombreMaxPersonnes"
+                                               class="form-control" min="1" max="10" />
+                                    </div>
+                                </div>
+
+                                <div class="col-12">
+                                    <label class="form-label">Notes</label>
+                                    <textarea @bind="newAffectation.Notes" class="form-control" rows="2"></textarea>
+                                </div>
+
+                                <div class="col-12">
+                                    <button class="btn btn-success" @onclick="AddAffectation">
+                                        <i class="bi bi-plus-circle me-2"></i>Ajouter l'affectation
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" @onclick="CloseAffectationsModal">
+                        Fermer
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Client> clients = new();
+    private List<Equipe> availableTeams = new();
+    private bool showClientModal = false;
+    private bool showAffectationsModal = false;
+    private bool isSaving = false;
+    private Client editingClient = new();
+    private Client? selectedClient;
+    private AffectationEquipeClient newAffectation = new();
+
+    // Filtres
+    private string searchTerm = "";
+    private string filterStatus = "";
+    private string filterCity = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        clients = await TeamPlanningService.GetAllClientsAsync(true);
+        availableTeams = await TeamPlanningService.GetAllEquipesAsync(true);
+        StateHasChanged();
+    }
+
+    private List<Client> GetFilteredClients()
+    {
+        var query = clients.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            query = query.Where(c =>
+                c.Nom.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                (c.CodeClient != null && c.CodeClient.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        if (!string.IsNullOrEmpty(filterStatus))
+        {
+            var isActive = bool.Parse(filterStatus);
+            query = query.Where(c => c.EstActif == isActive);
+        }
+
+        if (!string.IsNullOrEmpty(filterCity))
+        {
+            query = query.Where(c => c.Ville == filterCity);
+        }
+
+        return query.OrderBy(c => c.Nom).ToList();
+    }
+
+    private List<string> GetUniqueCities()
+    {
+        return clients
+            .Where(c => !string.IsNullOrEmpty(c.Ville))
+            .Select(c => c.Ville!)
+            .Distinct()
+            .OrderBy(v => v)
+            .ToList();
+    }
+
+    private int GetTotalAffectations()
+    {
+        return clients.Sum(c => c.Affectations.Count(a => a.EstActive));
+    }
+
+    private void ShowAddClientModal()
+    {
+        editingClient = new Client
+        {
+            EstActif = true,
+            Pays = "Maroc",
+            DateCreation = DateTime.Now
+        };
+        showClientModal = true;
+    }
+
+    private void EditClient(Client client)
+    {
+        editingClient = new Client
+        {
+            Id = client.Id,
+            Nom = client.Nom,
+            CodeClient = client.CodeClient,
+            Adresse = client.Adresse,
+            Ville = client.Ville,
+            CodePostal = client.CodePostal,
+            Pays = client.Pays,
+            ContactPrincipal = client.ContactPrincipal,
+            EmailContact = client.EmailContact,
+            TelephoneContact = client.TelephoneContact,
+            EstActif = client.EstActif,
+            DateDebutContrat = client.DateDebutContrat,
+            DateFinContrat = client.DateFinContrat,
+            DistanceKm = client.DistanceKm,
+            TempsDeplacement = client.TempsDeplacement
+        };
+        showClientModal = true;
+    }
+
+    private async Task SaveClient()
+    {
+        try
+        {
+            isSaving = true;
+
+            if (editingClient.Id > 0)
+            {
+                // Modification
+                var existing = await DbContext.Clients.FindAsync(editingClient.Id);
+                if (existing != null)
+                {
+                    existing.Nom = editingClient.Nom;
+                    existing.CodeClient = editingClient.CodeClient;
+                    existing.Adresse = editingClient.Adresse;
+                    existing.Ville = editingClient.Ville;
+                    existing.CodePostal = editingClient.CodePostal;
+                    existing.Pays = editingClient.Pays;
+                    existing.ContactPrincipal = editingClient.ContactPrincipal;
+                    existing.EmailContact = editingClient.EmailContact;
+                    existing.TelephoneContact = editingClient.TelephoneContact;
+                    existing.EstActif = editingClient.EstActif;
+                    existing.DateDebutContrat = editingClient.DateDebutContrat;
+                    existing.DateFinContrat = editingClient.DateFinContrat;
+                    existing.DistanceKm = editingClient.DistanceKm;
+                    existing.TempsDeplacement = editingClient.TempsDeplacement;
+                }
+            }
+            else
+            {
+                // Création
+                DbContext.Clients.Add(editingClient);
+            }
+
+            await DbContext.SaveChangesAsync();
+            ToastService.ShowSuccess("Client sauvegardé avec succès", "Sauvegarde réussie");
+
+            CloseClientModal();
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur lors de la sauvegarde: {ex.Message}", "Erreur");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void ViewClientDetails(int clientId)
+    {
+        Navigation.NavigateTo($"/clients/{clientId}");
+    }
+
+    private void ManageAffectations(Client client)
+    {
+        selectedClient = client;
+        newAffectation = new AffectationEquipeClient
+        {
+            ClientId = client.Id,
+            DateDebut = DateTime.Today,
+            EstActive = true,
+            TypeMission = TypeMission.Regulier,
+            NombreMinPersonnes = 2,
+            NombreMaxPersonnes = 3
+        };
+        showAffectationsModal = true;
+    }
+
+    private void ManageCompetences(Client client)
+    {
+        Navigation.NavigateTo($"/clients/{client.Id}/competences");
+    }
+
+    private async Task AddAffectation()
+    {
+        if (newAffectation.EquipeId == 0)
+        {
+            ToastService.ShowWarning("Veuillez sélectionner une équipe", "Sélection requise");
+            return;
+        }
+
+        try
+        {
+            newAffectation.ClientId = selectedClient!.Id;
+            DbContext.AffectationsEquipeClient.Add(newAffectation);
+            await DbContext.SaveChangesAsync();
+
+            ToastService.ShowSuccess("Affectation ajoutée avec succès", "Ajout réussi");
+
+            // Recharger le client
+            await LoadData();
+            selectedClient = clients.First(c => c.Id == selectedClient.Id);
+
+            // Réinitialiser le formulaire
+            newAffectation = new AffectationEquipeClient
+            {
+                ClientId = selectedClient.Id,
+                DateDebut = DateTime.Today,
+                EstActive = true,
+                TypeMission = TypeMission.Regulier,
+                NombreMinPersonnes = 2,
+                NombreMaxPersonnes = 3
+            };
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur: {ex.Message}", "Erreur");
+        }
+    }
+
+    private void EditAffectation(AffectationEquipeClient affectation)
+    {
+        // TODO: Implémenter l'édition des affectations
+        ToastService.ShowInfo("Fonction en développement", "À venir");
+    }
+
+    private async Task DeleteAffectation(AffectationEquipeClient affectation)
+    {
+        try
+        {
+            DbContext.AffectationsEquipeClient.Remove(affectation);
+            await DbContext.SaveChangesAsync();
+
+            ToastService.ShowSuccess("Affectation supprimée", "Suppression réussie");
+            await LoadData();
+            selectedClient = clients.First(c => c.Id == selectedClient!.Id);
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur: {ex.Message}", "Erreur");
+        }
+    }
+
+    private void ClearFilters()
+    {
+        searchTerm = "";
+        filterStatus = "";
+        filterCity = "";
+    }
+
+    private string GetTypeMissionDisplay(TypeMission type)
+    {
+        return type switch
+        {
+            TypeMission.Regulier => "Régulier",
+            TypeMission.Ponctuel => "Ponctuel",
+            TypeMission.Projet => "Projet",
+            TypeMission.Urgence => "Urgence",
+            TypeMission.Formation => "Formation",
+            TypeMission.Audit => "Audit",
+            TypeMission.Support => "Support",
+            _ => type.ToString()
+        };
+    }
+
+    private void CloseClientModal()
+    {
+        showClientModal = false;
+        editingClient = new();
+    }
+
+    private void CloseAffectationsModal()
+    {
+        showAffectationsModal = false;
+        selectedClient = null;
+        newAffectation = new();
+    }
+}

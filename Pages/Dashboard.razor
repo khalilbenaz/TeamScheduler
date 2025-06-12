@@ -1,0 +1,800 @@
+@page "/"
+@using PlanningPresenceBlazor.Services
+@using PlanningPresenceBlazor.Data
+@using Microsoft.EntityFrameworkCore
+@inject PlanningService PlanningService
+@inject PlanningDbContext DbContext
+@inject NavigationManager Navigation
+@inject ToastService ToastService
+
+<!-- En-tête de page -->
+<div class="page-header-dashboard">
+    <div class="row align-items-center">
+        <div class="col-md-8">
+            <h1 class="page-title mb-2">
+                Bonjour, @GetGreeting() !
+            </h1>
+            <p class="page-subtitle">
+                <i class="bi bi-calendar-check me-2"></i>
+                @DateTime.Now.ToString("dddd d MMMM yyyy", new System.Globalization.CultureInfo("fr-FR"))
+            </p>
+        </div>
+        <div class="col-md-4 text-end">
+            <button class="btn btn-primary btn-modern" @onclick="NavigateToPlanning">
+                <i class="bi bi-calendar3 me-2"></i>
+                Voir le planning
+            </button>
+        </div>
+    </div>
+</div>
+
+<h3>Tableau de bord : Statistiques</h3>
+
+<div class="row">
+    <div class="col-md-6">
+        <BarChart Labels="BarLabels" Datasets="BarDatasets" Horizontal="true" Height="350px" />
+    </div>
+    <div class="col-md-6">
+        <LineChart Labels="LineLabels" Datasets="LineDatasets" ShowArea="true" Height="300px" />
+    </div>
+</div>
+<div class="row mt-4">
+    <div class="col-md-4">
+        <PieChart Labels="PieLabels" Data="PieData" />
+    </div>
+    <div class="col-md-4">
+        <RadarChart Labels="RadarLabels" Datasets="RadarDatasets" />
+    </div>
+    <div class="col-md-4">
+        <DoughnutStatChart Value="78" MaxValue="100" Label="Taux de présence" Unit="%" Height="200px" />
+    </div>
+</div>
+
+<!-- Statistiques rapides -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="dashboard-stat-card" style="border-color: #10b981;">
+            <div class="stat-icon bg-success bg-opacity-10">
+                <i class="bi bi-people-fill text-success"></i>
+            </div>
+            <div class="stat-content">
+                <h3 class="stat-value">@presentToday</h3>
+                <p class="stat-label">Présents aujourd'hui</p>
+                <span class="stat-change text-success">
+                    <i class="bi bi-arrow-up"></i> @GetPresenceChange()%
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="dashboard-stat-card" style="border-color: #f59e0b;">
+            <div class="stat-icon bg-warning bg-opacity-10">
+                <i class="bi bi-calendar-x text-warning"></i>
+            </div>
+            <div class="stat-content">
+                <h3 class="stat-value">@congesThisWeek</h3>
+                <p class="stat-label">En congé cette semaine</p>
+                <span class="stat-change text-muted">
+                    @GetCongesInfo()
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="dashboard-stat-card" style="border-color: #3b82f6;">
+            <div class="stat-icon bg-primary bg-opacity-10">
+                <i class="bi bi-percent text-primary"></i>
+            </div>
+            <div class="stat-content">
+                <h3 class="stat-value">@averagePresenceRate.ToString("F0")%</h3>
+                <p class="stat-label">Taux de présence moyen</p>
+                <span class="stat-change text-primary">
+                    Mois en cours
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="dashboard-stat-card" style="border-color: #8b5cf6;">
+            <div class="stat-icon bg-purple bg-opacity-10">
+                <i class="bi bi-graph-up-arrow text-purple"></i>
+            </div>
+            <div class="stat-content">
+                <h3 class="stat-value">@upcomingRotations</h3>
+                <p class="stat-label">Rotations à venir</p>
+                <span class="stat-change text-purple">
+                    Prochains 30 jours
+                </span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Alertes et notifications -->
+@if (alerts.Any())
+{
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card card-modern border-0">
+                <div class="card-header bg-danger bg-opacity-10 border-0">
+                    <h5 class="mb-0">
+                        <i class="bi bi-exclamation-triangle-fill text-danger me-2"></i>
+                        Alertes et notifications
+                    </h5>
+                </div>
+                <div class="card-body">
+                    @foreach (var alert in alerts)
+                    {
+                        <div class="alert @GetAlertClass(alert.Type) d-flex align-items-center mb-2" role="alert">
+                            <i class="bi @GetAlertIcon(alert.Type) me-3 fs-5"></i>
+                            <div class="flex-grow-1">
+                                <strong>@alert.Title</strong> - @alert.Message
+                            </div>
+                            <button class="btn btn-sm btn-outline-secondary ms-3" @onclick="() => HandleAlert(alert)">
+                                @alert.ActionText
+                            </button>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<div class="row">
+    <!-- Planning de la semaine -->
+    <div class="col-md-8">
+        <div class="card card-modern h-100">
+            <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="bi bi-calendar-week me-2"></i>
+                        Planning de la semaine
+                    </h5>
+                    <span class="badge bg-primary">
+                        Semaine @GetWeekNumber()
+                    </span>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="week-planning-grid">
+                    @foreach (var day in GetWeekDays())
+                    {
+                        <div class="day-column @(day.IsToday ? "today" : "")">
+                            <div class="day-header">
+                                <span class="day-name">@day.Name</span>
+                                <span class="day-date">@day.Date.Day</span>
+                            </div>
+                            <div class="day-content">
+                                @if (day.Employees.Any())
+                                {
+                                    @foreach (var emp in day.Employees.Take(3))
+                                    {
+                                        <div class="employee-badge @GetEmployeeBadgeClass(emp.Status)">
+                                            <i class="bi bi-person-circle me-1"></i>
+                                            @emp.Name
+                                        </div>
+                                    }
+                                    @if (day.Employees.Count > 3)
+                                    {
+                                        <div class="more-employees">
+                                            +@(day.Employees.Count - 3) autres
+                                        </div>
+                                    }
+                                }
+                                else
+                                {
+                                    <div class="no-data">
+                                        <i class="bi bi-dash-circle text-muted"></i>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Activité récente -->
+    <div class="col-md-4">
+        <div class="card card-modern h-100">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-clock-history me-2"></i>
+                    Activité récente
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="activity-timeline">
+                    @foreach (var activity in recentActivities)
+                    {
+                        <div class="activity-item">
+                            <div class="activity-icon @GetActivityIconClass(activity.Type)">
+                                <i class="bi @GetActivityIcon(activity.Type)"></i>
+                            </div>
+                            <div class="activity-content">
+                                <p class="activity-text">@activity.Description</p>
+                                <small class="text-muted">@GetRelativeTime(activity.Timestamp)</small>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Actions rapides -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card card-modern">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-lightning-charge me-2"></i>
+                    Actions rapides
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <button class="quick-action-btn w-100" @onclick='() => Navigation.NavigateTo("/planning")'>
+                            <i class="bi bi-calendar-plus fs-1 text-primary mb-2"></i>
+                            <h6>Modifier le planning</h6>
+                            <p class="text-muted small mb-0">Gérer les présences</p>
+                        </button>
+                    </div>
+                    <div class="col-md-3">
+                        <button class="quick-action-btn w-100" @onclick='() => Navigation.NavigateTo("/conges")'>
+                            <i class="bi bi-calendar-x fs-1 text-warning mb-2"></i>
+                            <h6>Gérer les congés</h6>
+                            <p class="text-muted small mb-0">Voir et éditer</p>
+                        </button>
+                    </div>
+                    <div class="col-md-3">
+                        <button class="quick-action-btn w-100" @onclick='() => Navigation.NavigateTo("/reports")'>
+                            <i class="bi bi-graph-up fs-1 text-success mb-2"></i>
+                            <h6>Générer un rapport</h6>
+                            <p class="text-muted small mb-0">Analyses détaillées</p>
+                        </button>
+                    </div>
+                    <div class="col-md-3">
+                        <button class="quick-action-btn w-100" @onclick='() => Navigation.NavigateTo("/rotation")'>
+                            <i class="bi bi-arrow-repeat fs-1 text-info mb-2"></i>
+                            <h6>Rotation automatique</h6>
+                            <p class="text-muted small mb-0">Planifier l'équité</p>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private int presentToday = 0;
+    private int congesThisWeek = 0;
+    private double averagePresenceRate = 0;
+    private int upcomingRotations = 0;
+    private List<DashboardAlert> alerts = new();
+    private List<ActivityItem> recentActivities = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDashboardData();
+    }
+
+    private async Task LoadDashboardData()
+    {
+        try
+        {
+            // Charger les employés actifs
+            var activeEmployees = await DbContext.Employes.Where(e => e.EstActif).ToListAsync();
+            var totalEmployees = activeEmployees.Count;
+
+            // Simuler les présences du jour (en production, cela viendrait du planning)
+            presentToday = Random.Shared.Next(totalEmployees - 5, totalEmployees);
+
+            // Charger les congés de la semaine
+            var startOfWeek = GetMondayOfWeek(DateTime.Today);
+            var endOfWeek = startOfWeek.AddDays(4);
+            
+            var conges = await DbContext.Conges
+                .Where(c => c.DateDebut <= endOfWeek && c.DateFin >= startOfWeek)
+                .ToListAsync();
+            
+            congesThisWeek = conges.Select(c => c.Nom).Distinct().Count();
+
+            // Calculer le taux de présence moyen (simulé)
+            averagePresenceRate = Random.Shared.Next(75, 95);
+
+            // Rotations à venir (simulé)
+            upcomingRotations = Random.Shared.Next(3, 8);
+
+            // Générer des alertes
+            GenerateAlerts();
+
+            // Générer l'activité récente
+            GenerateRecentActivity();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur lors du chargement: {ex.Message}", "Erreur");
+        }
+    }
+
+    private void GenerateAlerts()
+    {
+        alerts.Clear();
+
+        if (congesThisWeek > 5)
+        {
+            alerts.Add(new DashboardAlert
+            {
+                Type = AlertType.Warning,
+                Title = "Effectif réduit",
+                Message = $"{congesThisWeek} employés en congé cette semaine",
+                ActionText = "Voir détails"
+            });
+        }
+
+        if (averagePresenceRate < 80)
+        {
+            alerts.Add(new DashboardAlert
+            {
+                Type = AlertType.Danger,
+                Title = "Taux de présence faible",
+                Message = "Le taux de présence est en dessous du seuil critique",
+                ActionText = "Analyser"
+            });
+        }
+
+        // Vérifier les congés non approuvés (simulé)
+        var pendingLeaves = Random.Shared.Next(0, 5);
+        if (pendingLeaves > 0)
+        {
+            alerts.Add(new DashboardAlert
+            {
+                Type = AlertType.Info,
+                Title = "Congés en attente",
+                Message = $"{pendingLeaves} demandes de congé à valider",
+                ActionText = "Valider"
+            });
+        }
+    }
+
+    private void GenerateRecentActivity()
+    {
+        recentActivities = new List<ActivityItem>
+        {
+            new() { 
+                Type = ActivityType.Planning, 
+                Description = "Planning mis à jour pour la semaine prochaine",
+                Timestamp = DateTime.Now.AddHours(-2)
+            },
+            new() { 
+                Type = ActivityType.Conge, 
+                Description = "Congé approuvé pour Jean Dupont",
+                Timestamp = DateTime.Now.AddHours(-5)
+            },
+            new() { 
+                Type = ActivityType.Employee, 
+                Description = "Nouvel employé ajouté: Marie Martin",
+                Timestamp = DateTime.Now.AddDays(-1)
+            },
+            new() { 
+                Type = ActivityType.Report, 
+                Description = "Rapport mensuel généré",
+                Timestamp = DateTime.Now.AddDays(-2)
+            },
+            new() { 
+                Type = ActivityType.Rotation, 
+                Description = "Rotation automatique appliquée",
+                Timestamp = DateTime.Now.AddDays(-3)
+            }
+        };
+    }
+
+    private string GetGreeting()
+    {
+        var hour = DateTime.Now.Hour;
+        if (hour < 12) return "Bonjour";
+        if (hour < 18) return "Bon après-midi";
+        return "Bonsoir";
+    }
+
+    private string GetPresenceChange()
+    {
+        // Simuler un changement par rapport à hier
+        return Random.Shared.Next(-5, 10).ToString("+0;-0;0");
+    }
+
+    private string GetCongesInfo()
+    {
+        if (congesThisWeek == 0) return "Aucun congé";
+        if (congesThisWeek == 1) return "1 employé";
+        return $"{congesThisWeek} employés";
+    }
+
+    private int GetWeekNumber()
+    {
+        var culture = new System.Globalization.CultureInfo("fr-FR");
+        var calendar = culture.Calendar;
+        return calendar.GetWeekOfYear(DateTime.Now, 
+            System.Globalization.CalendarWeekRule.FirstFourDayWeek, 
+            DayOfWeek.Monday);
+    }
+
+    private List<WeekDay> GetWeekDays()
+    {
+        var days = new List<WeekDay>();
+        var monday = GetMondayOfWeek(DateTime.Today);
+
+        for (int i = 0; i < 5; i++)
+        {
+            var date = monday.AddDays(i);
+            var day = new WeekDay
+            {
+                Date = date,
+                Name = date.ToString("ddd", new System.Globalization.CultureInfo("fr-FR")),
+                IsToday = date.Date == DateTime.Today.Date,
+                Employees = new List<EmployeeStatus>()
+            };
+
+            // Simuler des employés pour chaque jour
+            var employeeCount = Random.Shared.Next(8, 12);
+            for (int j = 0; j < employeeCount; j++)
+            {
+                day.Employees.Add(new EmployeeStatus
+                {
+                    Name = $"Employé {j + 1}",
+                    Status = Random.Shared.Next(10) > 2 ? "present" : "conge"
+                });
+            }
+
+            days.Add(day);
+        }
+
+        return days;
+    }
+
+    private DateTime GetMondayOfWeek(DateTime date)
+    {
+        int daysFromMonday = ((int)date.DayOfWeek - 1 + 7) % 7;
+        return date.AddDays(-daysFromMonday);
+    }
+
+    private string GetAlertClass(AlertType type)
+    {
+        return type switch
+        {
+            AlertType.Info => "alert-info",
+            AlertType.Warning => "alert-warning",
+            AlertType.Danger => "alert-danger",
+            _ => "alert-secondary"
+        };
+    }
+
+    private string GetAlertIcon(AlertType type)
+    {
+        return type switch
+        {
+            AlertType.Info => "bi-info-circle-fill",
+            AlertType.Warning => "bi-exclamation-triangle-fill",
+            AlertType.Danger => "bi-x-circle-fill",
+            _ => "bi-bell-fill"
+        };
+    }
+
+    private string GetActivityIcon(ActivityType type)
+    {
+        return type switch
+        {
+            ActivityType.Planning => "bi-calendar-check",
+            ActivityType.Conge => "bi-calendar-x",
+            ActivityType.Employee => "bi-person-plus",
+            ActivityType.Report => "bi-file-earmark-bar-graph",
+            ActivityType.Rotation => "bi-arrow-repeat",
+            _ => "bi-circle"
+        };
+    }
+
+    private string GetActivityIconClass(ActivityType type)
+    {
+        return type switch
+        {
+            ActivityType.Planning => "bg-primary",
+            ActivityType.Conge => "bg-warning",
+            ActivityType.Employee => "bg-success",
+            ActivityType.Report => "bg-info",
+            ActivityType.Rotation => "bg-purple",
+            _ => "bg-secondary"
+        };
+    }
+
+    private string GetEmployeeBadgeClass(string status)
+    {
+        return status == "present" ? "badge-present" : "badge-conge";
+    }
+
+    private string GetRelativeTime(DateTime timestamp)
+    {
+        var diff = DateTime.Now - timestamp;
+        
+        if (diff.TotalMinutes < 60)
+            return $"Il y a {(int)diff.TotalMinutes} minutes";
+        if (diff.TotalHours < 24)
+            return $"Il y a {(int)diff.TotalHours} heures";
+        if (diff.TotalDays < 7)
+            return $"Il y a {(int)diff.TotalDays} jours";
+        
+        return timestamp.ToString("dd/MM/yyyy");
+    }
+
+    private void NavigateToPlanning()
+    {
+        Navigation.NavigateTo("/planning");
+    }
+
+    private void HandleAlert(DashboardAlert alert)
+    {
+        // Gérer l'action de l'alerte
+        if (alert.Title.Contains("Congés en attente"))
+        {
+            Navigation.NavigateTo("/conges");
+        }
+        else if (alert.Title.Contains("Taux de présence"))
+        {
+            Navigation.NavigateTo("/reports");
+        }
+    }
+
+    // Classes de modèle
+    private class DashboardAlert
+    {
+        public AlertType Type { get; set; }
+        public string Title { get; set; } = "";
+        public string Message { get; set; } = "";
+        public string ActionText { get; set; } = "Voir";
+    }
+
+    private enum AlertType
+    {
+        Info,
+        Warning,
+        Danger
+    }
+
+    private class ActivityItem
+    {
+        public ActivityType Type { get; set; }
+        public string Description { get; set; } = "";
+        public DateTime Timestamp { get; set; }
+    }
+
+    private enum ActivityType
+    {
+        Planning,
+        Conge,
+        Employee,
+        Report,
+        Rotation
+    }
+
+    private class WeekDay
+    {
+        public DateTime Date { get; set; }
+        public string Name { get; set; } = "";
+        public bool IsToday { get; set; }
+        public List<EmployeeStatus> Employees { get; set; } = new();
+    }
+
+    private class EmployeeStatus
+    {
+        public string Name { get; set; } = "";
+        public string Status { get; set; } = "";
+    }
+}
+
+<style>
+    .page-header-dashboard {
+        background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+        border-radius: 20px;
+        padding: 2rem;
+        margin-bottom: 2rem;
+    }
+
+    .dashboard-stat-card {
+        background: white;
+        border: 2px solid;
+        border-radius: 15px;
+        padding: 1.5rem;
+        height: 100%;
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .dashboard-stat-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    }
+
+    .stat-icon {
+        width: 50px;
+        height: 50px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .stat-value {
+        font-size: 2rem;
+        font-weight: 700;
+        margin-bottom: 0.25rem;
+        color: #1e293b;
+    }
+
+    .stat-label {
+        color: #64748b;
+        font-size: 0.875rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .stat-change {
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .week-planning-grid {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 1rem;
+        height: 300px;
+    }
+
+    .day-column {
+        background: #f8fafc;
+        border-radius: 10px;
+        padding: 0.75rem;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .day-column.today {
+        background: linear-gradient(135deg, rgba(37, 99, 235, 0.1) 0%, rgba(99, 102, 241, 0.1) 100%);
+        border: 2px solid #3b82f6;
+    }
+
+    .day-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.75rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid #e2e8f0;
+    }
+
+    .day-name {
+        font-weight: 600;
+        color: #475569;
+    }
+
+    .day-date {
+        background: #1e293b;
+        color: white;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.875rem;
+        font-weight: 600;
+    }
+
+    .employee-badge {
+        background: #e0f2fe;
+        color: #0369a1;
+        padding: 0.25rem 0.5rem;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        margin-bottom: 0.25rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .badge-present {
+        background: #d1fae5;
+        color: #065f46;
+    }
+
+    .badge-conge {
+        background: #fed7aa;
+        color: #9a3412;
+    }
+
+    .more-employees {
+        color: #6b7280;
+        font-size: 0.75rem;
+        font-style: italic;
+        margin-top: 0.25rem;
+    }
+
+    .activity-timeline {
+        position: relative;
+        padding-left: 2rem;
+    }
+
+    .activity-timeline::before {
+        content: '';
+        position: absolute;
+        left: 12px;
+        top: 20px;
+        bottom: 0;
+        width: 2px;
+        background: #e2e8f0;
+    }
+
+    .activity-item {
+        position: relative;
+        margin-bottom: 1.5rem;
+    }
+
+    .activity-icon {
+        position: absolute;
+        left: -2rem;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 0.75rem;
+    }
+
+    .activity-text {
+        margin-bottom: 0.25rem;
+        color: #334155;
+    }
+
+    .quick-action-btn {
+        background: white;
+        border: 2px solid #e2e8f0;
+        border-radius: 15px;
+        padding: 2rem 1rem;
+        text-align: center;
+        transition: all 0.3s ease;
+        cursor: pointer;
+    }
+
+    .quick-action-btn:hover {
+        border-color: #3b82f6;
+        transform: translateY(-5px);
+        box-shadow: 0 10px 25px rgba(59, 130, 246, 0.15);
+    }
+
+    .bg-purple {
+        background: #8b5cf6 !important;
+    }
+
+    .text-purple {
+        color: #8b5cf6 !important;
+    }
+
+    .no-data {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        color: #cbd5e1;
+    }
+</style>

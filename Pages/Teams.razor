@@ -1,0 +1,692 @@
+@page "/teams"
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.EntityFrameworkCore
+@using PlanningPresenceBlazor.Data
+@using PlanningPresenceBlazor.Services
+@inject TeamPlanningService TeamPlanningService
+@inject PlanningDbContext DbContext
+@inject ToastService ToastService
+@inject NavigationManager Navigation
+
+<!-- En-tête de page -->
+<div class="page-header">
+    <h1 class="page-title">
+        <i class="bi bi-people-fill"></i>
+        Gestion des Équipes
+    </h1>
+    <p class="page-subtitle">Gérez vos équipes, leurs membres et leurs affectations clients</p>
+</div>
+
+<!-- Actions et statistiques -->
+<div class="row mb-4">
+    <div class="col-md-8">
+        <button class="btn btn-success btn-modern" @onclick="ShowAddTeamModal">
+            <i class="bi bi-plus-circle me-2"></i>Nouvelle équipe
+        </button>
+        <button class="btn btn-outline-primary btn-modern ms-2" @onclick="LoadData">
+            <i class="bi bi-arrow-clockwise me-2"></i>Actualiser
+        </button>
+    </div>
+    <div class="col-md-4 text-end">
+        <span class="badge bg-primary fs-6">@teams.Count équipe(s)</span>
+        <span class="badge bg-success fs-6 ms-2">@teams.Sum(t => t.Membres.Count) membre(s)</span>
+        <span class="badge bg-info fs-6 ms-2">@teams.Sum(t => t.Affectations.Count(a => a.EstActive)) affectation(s)</span>
+    </div>
+</div>
+
+<!-- Liste des équipes -->
+<div class="row">
+    @foreach (var team in teams)
+    {
+        <div class="col-md-6 mb-4">
+            <div class="card card-modern @(!team.EstActive ? "opacity-75" : "")">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="bi bi-people me-2 text-primary"></i>
+                        @team.Nom
+                        @if (!string.IsNullOrEmpty(team.CodeEquipe))
+                        {
+                            <span class="badge bg-secondary ms-2">@team.CodeEquipe</span>
+                        }
+                    </h5>
+                    <div>
+                        @if (team.EstActive)
+                        {
+                            <span class="badge bg-success">Active</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-danger">Inactive</span>
+                        }
+                    </div>
+                </div>
+
+                <div class="card-body">
+                    @if (!string.IsNullOrEmpty(team.Description))
+                    {
+                        <p class="text-muted small mb-3">@team.Description</p>
+                    }
+
+                    <!-- Chef d'équipe -->
+                    @if (team.ChefEquipe != null)
+                    {
+                        <div class="mb-3">
+                            <strong><i class="bi bi-person-badge me-1"></i>Chef d'équipe:</strong>
+                            <span class="text-primary">@team.ChefEquipe.Nom</span>
+                        </div>
+                    }
+
+                    <!-- Statistiques -->
+                    <div class="row text-center mb-3">
+                        <div class="col-4">
+                            <div class="stat-mini">
+                                <div class="stat-value">@team.Membres.Count</div>
+                                <div class="stat-label">Membres</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="stat-mini">
+                                <div class="stat-value">@team.Affectations.Count(a => a.EstActive)</div>
+                                <div class="stat-label">Clients</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="stat-mini">
+                                <div class="stat-value">@team.Membres.Count(m => m.EstActif)</div>
+                                <div class="stat-label">Actifs</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Configuration -->
+                    <div class="config-info mb-3">
+                        <small class="text-muted">
+                            <i class="bi bi-gear me-1"></i>
+                            Présences: @team.PresencesMinParPersonne-@team.PresencesMaxParPersonne/semaine,
+                            @team.PresencesMinParJour-@team.PresencesMaxParJour/jour
+                        </small>
+                    </div>
+
+                    <!-- Membres -->
+                    <div class="members-preview mb-3">
+                        <strong>Membres:</strong>
+                        @if (team.Membres.Any())
+                        {
+                            <div class="d-flex flex-wrap gap-1 mt-1">
+                                @foreach (var membre in team.Membres.Take(5))
+                                {
+                                    <span class="badge @(membre.EstActif ? "bg-light text-dark" : "bg-secondary")">
+                                        @membre.Nom
+                                    </span>
+                                }
+                                @if (team.Membres.Count > 5)
+                                {
+                                    <span class="badge bg-light text-dark">+@(team.Membres.Count - 5)</span>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <span class="text-muted">Aucun membre</span>
+                        }
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-primary btn-sm" @onclick="() => ViewTeamDetails(team.Id)">
+                            <i class="bi bi-eye me-1"></i>Détails
+                        </button>
+                        <button class="btn btn-outline-primary btn-sm" @onclick="() => EditTeam(team)">
+                            <i class="bi bi-pencil me-1"></i>Modifier
+                        </button>
+                        <button class="btn btn-outline-success btn-sm" @onclick="() => ManageMembers(team.Id)">
+                            <i class="bi bi-person-plus me-1"></i>Membres
+                        </button>
+                        <button class="btn btn-outline-warning btn-sm" @onclick="() => ToggleTeamStatus(team)">
+                            @if (team.EstActive)
+                            {
+                                <i class="bi bi-pause-circle me-1">Désactiver</i>
+                            }
+                            else
+                            {
+                                <i class="bi bi-play-circle me-1">Activer</i>
+                            }
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@if (!teams.Any())
+{
+    <div class="card card-modern">
+        <div class="card-body text-center py-5">
+            <i class="bi bi-people fs-1 text-muted mb-3"></i>
+            <h5 class="text-muted">Aucune équipe créée</h5>
+            <p class="text-muted">Commencez par créer votre première équipe.</p>
+            <button class="btn btn-primary btn-modern mt-3" @onclick="ShowAddTeamModal">
+                <i class="bi bi-plus-circle me-2"></i>Créer une équipe
+            </button>
+        </div>
+    </div>
+}
+
+<!-- Modal d'ajout/modification d'équipe -->
+@if (showTeamModal)
+{
+    <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-@(editingTeam?.Id > 0 ? "pencil" : "plus-circle") me-2"></i>
+                        @(editingTeam?.Id > 0 ? "Modifier" : "Créer") une équipe
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseTeamModal"></button>
+                </div>
+
+                <EditForm Model="editingTeam" OnValidSubmit="SaveTeam">
+                    <DataAnnotationsValidator />
+                    <div class="modal-body">
+                        <div class="row g-3">
+                            <!-- Informations de base -->
+                            <div class="col-md-6">
+                                <label class="form-label">Nom de l'équipe *</label>
+                                <InputText @bind-Value="editingTeam.Nom" class="form-control" />
+                                <ValidationMessage For="@(() => editingTeam.Nom)" class="text-danger" />
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label">Code équipe</label>
+                                <InputText @bind-Value="editingTeam.CodeEquipe" class="form-control"
+                                           placeholder="Ex: DEV01" />
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label">Description</label>
+                                <InputTextArea @bind-Value="editingTeam.Description" class="form-control"
+                                               rows="2" />
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label">Chef d'équipe</label>
+                                <select @bind="editingTeam.ChefEquipeId" class="form-select">
+                                    <option value="">-- Sélectionner --</option>
+                                    @foreach (var employe in availableEmployees)
+                                    {
+                                        <option value="@employe.Id">@employe.Nom</option>
+                                    }
+                                </select>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label">Statut</label>
+                                <div class="form-check form-switch mt-2">
+                                    <InputCheckbox @bind-Value="editingTeam.EstActive" class="form-check-input"
+                                                   id="teamActive" />
+                                    <label class="form-check-label" for="teamActive">
+                                        Équipe active
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- Configuration des contraintes -->
+                            <div class="col-12">
+                                <h6 class="border-bottom pb-2 mt-3">
+                                    <i class="bi bi-gear me-2"></i>Configuration des présences
+                                </h6>
+                            </div>
+
+                            <div class="col-md-3">
+                                <label class="form-label">Min/personne/semaine</label>
+                                <InputNumber @bind-Value="editingTeam.PresencesMinParPersonne"
+                                             class="form-control" min="0" max="5" />
+                            </div>
+
+                            <div class="col-md-3">
+                                <label class="form-label">Max/personne/semaine</label>
+                                <InputNumber @bind-Value="editingTeam.PresencesMaxParPersonne"
+                                             class="form-control" min="0" max="5" />
+                            </div>
+
+                            <div class="col-md-3">
+                                <label class="form-label">Min/jour</label>
+                                <InputNumber @bind-Value="editingTeam.PresencesMinParJour"
+                                             class="form-control" min="0" max="10" />
+                            </div>
+
+                            <div class="col-md-3">
+                                <label class="form-label">Max/jour</label>
+                                <InputNumber @bind-Value="editingTeam.PresencesMaxParJour"
+                                             class="form-control" min="0" max="10" />
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label">Jours critiques</label>
+                                <div class="d-flex gap-3">
+                                    @foreach (var day in WeekDays)
+                                    {
+                                        <div class="form-check">
+                                            <input type="checkbox" class="form-check-input"
+                                                   id="@($"day-{day}")"
+                                                   checked="@criticalDays.Contains(day)"
+                                                   @onchange="@((e) => ToggleCriticalDay(day, (bool)e.Value!))" />
+                                            <label class="form-check-label" for="@($"day-{day}")">
+                                                @day
+                                            </label>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label">Min présences jours critiques</label>
+                                <InputNumber @bind-Value="editingTeam.PresencesMinJoursCritiques"
+                                             class="form-control" min="0" max="10" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @onclick="CloseTeamModal">
+                            Annuler
+                        </button>
+                        <button type="submit" class="btn btn-primary" disabled="@isSaving">
+                            @if (isSaving)
+                            {
+                                <div class="spinner-border spinner-border-sm me-2"></div>
+                            }
+                            <i class="bi bi-check-circle me-1"></i>
+                            @(editingTeam?.Id > 0 ? "Modifier" : "Créer")
+                        </button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Modal de gestion des membres -->
+@if (showMembersModal && selectedTeam != null)
+{
+    <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-person-plus me-2"></i>
+                        Gérer les membres - @selectedTeam.Nom
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseMembersModal"></button>
+                </div>
+
+                <div class="modal-body">
+                    <div class="row">
+                        <!-- Membres actuels -->
+                        <div class="col-md-6">
+                            <h6>Membres actuels (@selectedTeam.Membres.Count)</h6>
+                            <div class="list-group">
+                                @foreach (var membre in selectedTeam.Membres.OrderBy(m => m.Nom))
+                                {
+                                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <strong>@membre.Nom</strong>
+                                            @if (!string.IsNullOrEmpty(membre.Poste))
+                                            {
+                                                <br><small class="text-muted">@membre.Poste</small>
+                                            }
+                                        </div>
+                                        <button class="btn btn-sm btn-outline-danger"
+                                                @onclick="() => RemoveMemberFromTeam(membre.Id)">
+                                            <i class="bi bi-x-circle"></i>
+                                        </button>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+
+                        <!-- Employés disponibles -->
+                        <div class="col-md-6">
+                            <h6>Employés disponibles</h6>
+                            <div class="mb-2">
+                                <input type="text" class="form-control form-control-sm"
+                                       placeholder="Rechercher..."
+                                       @bind="searchEmployeeTerm"
+                                       @bind:event="oninput" />
+                            </div>
+                            <div class="list-group" style="max-height: 400px; overflow-y: auto;">
+                                @foreach (var employe in GetFilteredAvailableEmployees())
+                                {
+                                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <strong>@employe.Nom</strong>
+                                            @if (employe.Equipe != null)
+                                            {
+                                                <br><small class="text-warning">
+                                                    Actuellement dans: @employe.Equipe.Nom
+                                                </small>
+                                            }
+                                        </div>
+                                        <button class="btn btn-sm btn-outline-success"
+                                                @onclick="() => AddMemberToTeam(employe.Id)">
+                                            <i class="bi bi-plus-circle"></i>
+                                        </button>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" @onclick="CloseMembersModal">
+                        Fermer
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    
+
+    .stat-mini {
+        padding: 0.5rem;
+    }
+
+    .stat-mini .stat-value {
+        font-size: 1.2rem;
+        font-weight: bold;
+        color: var(--primary-color);
+    }
+
+    .stat-mini .stat-label {
+        font-size: 0.75rem;
+        color: #6c757d;
+    }
+
+    .config-info {
+        background: #f8f9fa;
+        padding: 0.5rem;
+        border-radius: 5px;
+    }
+
+    .members-preview {
+        min-height: 60px;
+    }
+</style>
+
+@code {
+    private List<Equipe> teams = new();
+    private List<Employe> availableEmployees = new();
+    private bool showTeamModal = false;
+    private bool showMembersModal = false;
+    private bool isSaving = false;
+    private Equipe editingTeam = new();
+    private Equipe? selectedTeam;
+    private List<string> criticalDays = new();
+    private string searchEmployeeTerm = "";
+    private static readonly string[] WeekDays = { "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi" };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        teams = await TeamPlanningService.GetAllEquipesAsync(true);
+        availableEmployees = await DbContext.Employes
+            .Where(e => e.EstActif)
+            .OrderBy(e => e.Nom)
+            .ToListAsync();
+        StateHasChanged();
+    }
+
+    private void ShowAddTeamModal()
+    {
+        editingTeam = new Equipe
+        {
+            EstActive = true,
+            PresencesMinParPersonne = 3,
+            PresencesMaxParPersonne = 5,
+            PresencesMinParJour = 2,
+            PresencesMaxParJour = 4,
+            PresencesMinJoursCritiques = 2,
+            JoursCritiques = "[\"Lundi\",\"Mardi\",\"Vendredi\"]"
+        };
+        criticalDays = new List<string> { "Lundi", "Mardi", "Vendredi" };
+        showTeamModal = true;
+    }
+
+    private void EditTeam(Equipe team)
+    {
+        editingTeam = new Equipe
+        {
+            Id = team.Id,
+            Nom = team.Nom,
+            CodeEquipe = team.CodeEquipe,
+            Description = team.Description,
+            EstActive = team.EstActive,
+            ChefEquipeId = team.ChefEquipeId,
+            PresencesMinParPersonne = team.PresencesMinParPersonne,
+            PresencesMaxParPersonne = team.PresencesMaxParPersonne,
+            PresencesMinParJour = team.PresencesMinParJour,
+            PresencesMaxParJour = team.PresencesMaxParJour,
+            PresencesMinJoursCritiques = team.PresencesMinJoursCritiques,
+            JoursCritiques = team.JoursCritiques
+        };
+
+        try
+        {
+            criticalDays = System.Text.Json.JsonSerializer.Deserialize<List<string>>(team.JoursCritiques ?? "[]") ?? new();
+        }
+        catch
+        {
+            criticalDays = new List<string> { "Lundi", "Mardi", "Vendredi" };
+        }
+
+        showTeamModal = true;
+    }
+
+    private async Task SaveTeam()
+    {
+        try
+        {
+            isSaving = true;
+
+            // Sérialiser les jours critiques
+            editingTeam.JoursCritiques = System.Text.Json.JsonSerializer.Serialize(criticalDays);
+
+            if (editingTeam.Id > 0)
+            {
+                // Modification
+                var existing = await DbContext.Equipes.FindAsync(editingTeam.Id);
+                if (existing != null)
+                {
+                    existing.Nom = editingTeam.Nom;
+                    existing.CodeEquipe = editingTeam.CodeEquipe;
+                    existing.Description = editingTeam.Description;
+                    existing.EstActive = editingTeam.EstActive;
+                    existing.ChefEquipeId = editingTeam.ChefEquipeId;
+                    existing.PresencesMinParPersonne = editingTeam.PresencesMinParPersonne;
+                    existing.PresencesMaxParPersonne = editingTeam.PresencesMaxParPersonne;
+                    existing.PresencesMinParJour = editingTeam.PresencesMinParJour;
+                    existing.PresencesMaxParJour = editingTeam.PresencesMaxParJour;
+                    existing.PresencesMinJoursCritiques = editingTeam.PresencesMinJoursCritiques;
+                    existing.JoursCritiques = editingTeam.JoursCritiques;
+                }
+            }
+            else
+            {
+                // Création
+                DbContext.Equipes.Add(editingTeam);
+            }
+
+            await DbContext.SaveChangesAsync();
+            ToastService.ShowSuccess("Équipe sauvegardée avec succès", "Sauvegarde réussie");
+
+            CloseTeamModal();
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur lors de la sauvegarde: {ex.Message}", "Erreur");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task ToggleTeamStatus(Equipe team)
+    {
+        try
+        {
+            team.EstActive = !team.EstActive;
+            await DbContext.SaveChangesAsync();
+
+            var status = team.EstActive ? "activée" : "désactivée";
+            ToastService.ShowSuccess($"Équipe {team.Nom} {status}", "Statut modifié");
+
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur: {ex.Message}", "Erreur");
+        }
+    }
+
+    private void ViewTeamDetails(int teamId)
+    {
+        Navigation.NavigateTo($"/teams/{teamId}");
+    }
+
+    private async Task ManageMembers(int teamId)
+    {
+        selectedTeam = await TeamPlanningService.GetEquipeByIdAsync(teamId, true);
+        showMembersModal = true;
+    }
+
+    private async Task AddMemberToTeam(int employeId)
+    {
+        if (selectedTeam == null) return;
+
+        try
+        {
+            var employe = await DbContext.Employes.FindAsync(employeId);
+            if (employe != null)
+            {
+                // Créer un historique si l'employé change d'équipe
+                if (employe.EquipeId != null && employe.EquipeId != selectedTeam.Id)
+                {
+                    var historique = new HistoriqueAffectation
+                    {
+                        EmployeId = employeId,
+                        EquipeId = selectedTeam.Id,
+                        DateDebut = DateTime.Now,
+                        TypeAffectation = TypeAffectation.ChangementEquipe,
+                        Motif = $"Transfert vers {selectedTeam.Nom}"
+                    };
+                    DbContext.HistoriquesAffectation.Add(historique);
+                }
+
+                employe.EquipeId = selectedTeam.Id;
+                await DbContext.SaveChangesAsync();
+
+                ToastService.ShowSuccess($"{employe.Nom} ajouté à l'équipe", "Membre ajouté");
+
+                // Recharger l'équipe
+                selectedTeam = await TeamPlanningService.GetEquipeByIdAsync(selectedTeam.Id, true);
+                await LoadData();
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur: {ex.Message}", "Erreur");
+        }
+    }
+
+    private async Task RemoveMemberFromTeam(int employeId)
+    {
+        if (selectedTeam == null) return;
+
+        try
+        {
+            var employe = await DbContext.Employes.FindAsync(employeId);
+            if (employe != null)
+            {
+                // Créer un historique
+                var historique = new HistoriqueAffectation
+                {
+                    EmployeId = employeId,
+                    DateDebut = DateTime.Now,
+                    TypeAffectation = TypeAffectation.ChangementEquipe,
+                    Motif = $"Retiré de {selectedTeam.Nom}"
+                };
+                DbContext.HistoriquesAffectation.Add(historique);
+
+                employe.EquipeId = null;
+                await DbContext.SaveChangesAsync();
+
+                ToastService.ShowSuccess($"{employe.Nom} retiré de l'équipe", "Membre retiré");
+
+                // Recharger l'équipe
+                selectedTeam = await TeamPlanningService.GetEquipeByIdAsync(selectedTeam.Id, true);
+                await LoadData();
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur: {ex.Message}", "Erreur");
+        }
+    }
+
+    private List<Employe> GetFilteredAvailableEmployees()
+    {
+        var query = availableEmployees.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(searchEmployeeTerm))
+        {
+            query = query.Where(e => e.Nom.Contains(searchEmployeeTerm, StringComparison.OrdinalIgnoreCase));
+        }
+
+        // Exclure les membres actuels de l'équipe sélectionnée
+        if (selectedTeam != null)
+        {
+            var currentMemberIds = selectedTeam.Membres.Select(m => m.Id).ToHashSet();
+            query = query.Where(e => !currentMemberIds.Contains(e.Id));
+        }
+
+        return query.OrderBy(e => e.Nom).ToList();
+    }
+
+    private void ToggleCriticalDay(string day, bool isChecked)
+    {
+        if (isChecked && !criticalDays.Contains(day))
+        {
+            criticalDays.Add(day);
+        }
+        else if (!isChecked)
+        {
+            criticalDays.Remove(day);
+        }
+    }
+
+    private void CloseTeamModal()
+    {
+        showTeamModal = false;
+        editingTeam = new();
+        criticalDays.Clear();
+    }
+
+    private void CloseMembersModal()
+    {
+        showMembersModal = false;
+        selectedTeam = null;
+        searchEmployeeTerm = "";
+    }
+}

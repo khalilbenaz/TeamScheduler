@@ -1,65 +1,67 @@
-using Microsoft.AspNetCore.Builder;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
+using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Web;
 using Microsoft.EntityFrameworkCore;
 using PlanningPresenceBlazor.Data;
 using PlanningPresenceBlazor.Services;
 using Serilog;
+using Serilog.Events;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Configuration de Serilog pour les logs
+// Configuration de Serilog pour le logging
 Log.Logger = new LoggerConfiguration()
-    .ReadFrom.Configuration(builder.Configuration)
+    .MinimumLevel.Debug()
+    .MinimumLevel.Override("Microsoft", LogEventLevel.Information)
+    .MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
     .Enrich.FromLogContext()
     .WriteTo.Console()
-    .WriteTo.File("Logs/planning-.txt", rollingInterval: RollingInterval.Day)
+    .WriteTo.File(
+        "Logs/planning-.log",
+        rollingInterval: RollingInterval.Day,
+        outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}"
+    )
     .CreateLogger();
 
 builder.Host.UseSerilog();
 
-// Configuration des services
+// Add services to the container.
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
 
-// Services mÈtier
-builder.Services.AddScoped<PlanningService>();
-builder.Services.AddScoped<ToastService>();
-builder.Services.AddScoped<NotificationService>();
-
-// Configuration de la base de donnÈes
+// Configuration de la base de donn√©es SQLite
 builder.Services.AddDbContext<PlanningDbContext>(options =>
-    options.UseSqlite("Data Source=planning.db"));
+    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=planning.db")
+           .EnableSensitiveDataLogging(builder.Environment.IsDevelopment())
+           .EnableDetailedErrors(builder.Environment.IsDevelopment()));
 
-// Configuration CORS si nÈcessaire
-builder.Services.AddCors(options =>
+// Services m√©tier
+builder.Services.AddScoped<PlanningService>();
+builder.Services.AddScoped<TeamPlanningService>();
+builder.Services.AddScoped<NotificationService>();
+builder.Services.AddScoped<ToastService>();
+
+// Configuration des options
+builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection("Email"));
+builder.Services.Configure<SMSOptions>(builder.Configuration.GetSection("SMS"));
+builder.Services.Configure<TeamsOptions>(builder.Configuration.GetSection("Teams"));
+builder.Services.Configure<PlanningOptions>(builder.Configuration.GetSection("Planning"));
+
+// HttpClient pour les notifications
+builder.Services.AddHttpClient();
+
+// Localisation fran√ßaise
+builder.Services.AddLocalization();
+builder.Services.Configure<RequestLocalizationOptions>(options =>
 {
-    options.AddDefaultPolicy(builder =>
-    {
-        builder.AllowAnyOrigin()
-               .AllowAnyMethod()
-               .AllowAnyHeader();
-    });
+    var supportedCultures = new[] { "fr-FR" };
+    options.SetDefaultCulture(supportedCultures[0])
+        .AddSupportedCultures(supportedCultures)
+        .AddSupportedUICultures(supportedCultures);
 });
 
 var app = builder.Build();
 
-// CrÈation automatique de la base de donnÈes
-using (var scope = app.Services.CreateScope())
-{
-    var context = scope.ServiceProvider.GetRequiredService<PlanningDbContext>();
-    try
-    {
-        context.Database.EnsureCreated();
-        Log.Information("Base de donnÈes initialisÈe avec succËs");
-    }
-    catch (Exception ex)
-    {
-        Log.Error(ex, "Erreur lors de l'initialisation de la base de donnÈes");
-    }
-}
-
-// Configuration du pipeline
+// Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error");
@@ -69,24 +71,47 @@ if (!app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseRouting();
-app.UseCors();
 
-// Middleware de logging des requÍtes
+// Localisation
+app.UseRequestLocalization();
+
+// Serilog request logging
 app.UseSerilogRequestLogging();
 
 app.MapBlazorHub();
 app.MapFallbackToPage("/_Host");
 
-try
+// Initialisation de la base de donn√©es
+using (var scope = app.Services.CreateScope())
 {
-    Log.Information("DÈmarrage de l'application Planning PrÈsence");
-    app.Run();
+    try
+    {
+        var dbContext = scope.ServiceProvider.GetRequiredService<PlanningDbContext>();
+        
+        // Cr√©er la base de donn√©es si elle n'existe pas
+        await dbContext.Database.EnsureCreatedAsync();
+        
+        // Appliquer les migrations
+        if (dbContext.Database.GetPendingMigrations().Any())
+        {
+            await dbContext.Database.MigrateAsync();
+        }
+        
+        // Initialiser les donn√©es de test en d√©veloppement
+        if (app.Environment.IsDevelopment())
+        {
+            await dbContext.InitializeTestDataAsync();
+        }
+        
+        Log.Information("Base de donn√©es initialis√©e avec succ√®s");
+    }
+    catch (Exception ex)
+    {
+        Log.Fatal(ex, "Erreur lors de l'initialisation de la base de donn√©es");
+        throw;
+    }
 }
-catch (Exception ex)
-{
-    Log.Fatal(ex, "Erreur fatale lors du dÈmarrage de l'application");
-}
-finally
-{
-    Log.CloseAndFlush();
-}
+
+Log.Information("Application d√©marr√©e");
+
+app.Run();

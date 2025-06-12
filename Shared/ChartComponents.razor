@@ -1,0 +1,617 @@
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+
+@* Exemples d'usage en bas de page *@
+
+@code {
+    // === Base abstraite ===
+    public abstract class ChartComponentBase : ComponentBase, IAsyncDisposable
+    {
+        [Inject] protected IJSRuntime JS { get; set; } = default!;
+        [Parameter] public string ChartId { get; set; } = $"chart_{Guid.NewGuid():N}";
+        [Parameter] public string Height { get; set; } = "300px";
+        [Parameter] public string Width { get; set; } = "100%";
+        [Parameter] public bool ShowLegend { get; set; } = true;
+        [Parameter] public bool ShowTooltips { get; set; } = true;
+        [Parameter] public bool Responsive { get; set; } = true;
+
+        protected ElementReference chartCanvas;
+        protected bool isInitialized = false;
+
+        protected override void BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder builder)
+        {
+            builder.OpenElement(0, "div");
+            builder.AddAttribute(1, "class", "chart-container");
+            builder.AddAttribute(2, "style", $"position: relative; height: {Height}; width: {Width};");
+            builder.OpenElement(3, "canvas");
+            builder.AddAttribute(4, "id", ChartId);
+            builder.AddElementReferenceCapture(5, capturedRef => chartCanvas = capturedRef);
+            builder.CloseElement();
+            builder.CloseElement();
+        }
+
+        protected override async Task OnAfterRenderAsync(bool firstRender)
+        {
+            if (firstRender && !isInitialized)
+            {
+                await InitializeChart();
+                isInitialized = true;
+            }
+        }
+
+        protected abstract Task InitializeChart();
+        public abstract Task UpdateData(object data);
+
+        public virtual async Task Destroy()
+        {
+            if (isInitialized)
+            {
+                await JS.InvokeVoidAsync("chartHelpers.destroyChart", ChartId);
+                isInitialized = false;
+            }
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await Destroy();
+        }
+    }
+
+    // === Data Contracts ===
+    public class BarDataset
+    {
+        public string Label { get; set; } = "";
+        public List<double> Data { get; set; } = new();
+        public List<string>? BackgroundColor { get; set; }
+        public List<string>? BorderColor { get; set; }
+        public int BorderWidth { get; set; } = 1;
+    }
+    public class BarChartData
+    {
+        public List<string> Labels { get; set; } = new();
+        public List<BarDataset> Datasets { get; set; } = new();
+    }
+    public class LineDataset
+    {
+        public string Label { get; set; } = "";
+        public List<double> Data { get; set; } = new();
+        public string? BorderColor { get; set; }
+        public string? BackgroundColor { get; set; }
+        public int BorderWidth { get; set; } = 2;
+        public int PointRadius { get; set; } = 3;
+        public int PointHoverRadius { get; set; } = 5;
+        public string? PointBackgroundColor { get; set; }
+    }
+    public class LineChartData
+    {
+        public List<string> Labels { get; set; } = new();
+        public List<LineDataset> Datasets { get; set; } = new();
+    }
+    public class PieChartData
+    {
+        public List<string> Labels { get; set; } = new();
+        public List<double> Data { get; set; } = new();
+        public List<string>? BackgroundColors { get; set; }
+    }
+    public class AreaDataset
+    {
+        public string Label { get; set; } = "";
+        public List<double> Data { get; set; } = new();
+        public string? BorderColor { get; set; }
+        public string? BackgroundColor { get; set; }
+    }
+    public class AreaChartData
+    {
+        public List<string> Labels { get; set; } = new();
+        public List<AreaDataset> Datasets { get; set; } = new();
+    }
+    public class RadarDataset
+    {
+        public string Label { get; set; } = "";
+        public List<double> Data { get; set; } = new();
+        public string? BorderColor { get; set; }
+        public string? BackgroundColor { get; set; }
+    }
+    public class RadarChartData
+    {
+        public List<string> Labels { get; set; } = new();
+        public List<RadarDataset> Datasets { get; set; } = new();
+    }
+
+    // === BarChart ===
+    public class BarChart : ChartComponentBase
+    {
+        [Parameter] public List<string> Labels { get; set; } = new();
+        [Parameter] public List<BarDataset> Datasets { get; set; } = new();
+        [Parameter] public bool Horizontal { get; set; } = false;
+        [Parameter] public bool Stacked { get; set; } = false;
+        [Parameter] public string YAxisLabel { get; set; } = "";
+        [Parameter] public string XAxisLabel { get; set; } = "";
+
+        protected override async Task InitializeChart()
+        {
+            var config = new
+            {
+                type = "bar",
+                data = new
+                {
+                    labels = Labels,
+                    datasets = Datasets.Select(d => new
+                    {
+                        label = d.Label,
+                        data = d.Data,
+                        backgroundColor = d.BackgroundColor ?? GenerateColors(d.Data.Count, 0.8f),
+                        borderColor = d.BorderColor ?? GenerateColors(d.Data.Count, 1f),
+                        borderWidth = d.BorderWidth
+                    })
+                },
+                options = new
+                {
+                    indexAxis = Horizontal ? "y" : "x",
+                    responsive = Responsive,
+                    maintainAspectRatio = false,
+                    plugins = new
+                    {
+                        legend = new { display = ShowLegend },
+                        tooltip = new { enabled = ShowTooltips }
+                    },
+                    scales = new
+                    {
+                        x = new
+                        {
+                            stacked = Stacked,
+                            title = new
+                            {
+                                display = !string.IsNullOrEmpty(XAxisLabel),
+                                text = XAxisLabel
+                            }
+                        },
+                        y = new
+                        {
+                            stacked = Stacked,
+                            title = new
+                            {
+                                display = !string.IsNullOrEmpty(YAxisLabel),
+                                text = YAxisLabel
+                            }
+                        }
+                    }
+                }
+            };
+
+            await JS.InvokeVoidAsync("chartHelpers.createChart", ChartId, config);
+        }
+
+        public override async Task UpdateData(object data)
+        {
+            if (data is BarChartData barData)
+            {
+                Labels = barData.Labels;
+                Datasets = barData.Datasets;
+                await JS.InvokeVoidAsync("chartHelpers.updateChart", ChartId, new { labels = Labels, datasets = Datasets });
+            }
+        }
+
+        private List<string> GenerateColors(int count, float alpha)
+        {
+            var colors = new List<string>();
+            var baseColors = new[] { "#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899" };
+            for (int i = 0; i < count; i++)
+            {
+                var color = baseColors[i % baseColors.Length];
+                colors.Add(alpha < 1 ? ConvertToRgba(color, alpha) : color);
+            }
+            return colors;
+        }
+        private string ConvertToRgba(string hex, float alpha)
+        {
+            hex = hex.Replace("#", "");
+            int r = Convert.ToInt32(hex.Substring(0, 2), 16);
+            int g = Convert.ToInt32(hex.Substring(2, 2), 16);
+            int b = Convert.ToInt32(hex.Substring(4, 2), 16);
+            return $"rgba({r}, {g}, {b}, {alpha})";
+        }
+    }
+
+    // === LineChart ===
+    public class LineChart : ChartComponentBase
+    {
+        [Parameter] public List<string> Labels { get; set; } = new();
+        [Parameter] public List<LineDataset> Datasets { get; set; } = new();
+        [Parameter] public bool ShowArea { get; set; } = false;
+        [Parameter] public bool Smooth { get; set; } = true;
+        [Parameter] public string YAxisLabel { get; set; } = "";
+        [Parameter] public string XAxisLabel { get; set; } = "";
+        [Parameter] public bool ShowGrid { get; set; } = true;
+
+        protected override async Task InitializeChart()
+        {
+            var config = new
+            {
+                type = "line",
+                data = new
+                {
+                    labels = Labels,
+                    datasets = Datasets.Select(d => new
+                    {
+                        label = d.Label,
+                        data = d.Data,
+                        borderColor = d.BorderColor ?? "#3b82f6",
+                        backgroundColor = ShowArea ? (d.BackgroundColor ?? "rgba(59, 130, 246, 0.1)") : "transparent",
+                        borderWidth = d.BorderWidth,
+                        fill = ShowArea,
+                        tension = Smooth ? 0.4 : 0,
+                        pointRadius = d.PointRadius,
+                        pointHoverRadius = d.PointHoverRadius,
+                        pointBackgroundColor = d.PointBackgroundColor ?? d.BorderColor
+                    })
+                },
+                options = new
+                {
+                    responsive = Responsive,
+                    maintainAspectRatio = false,
+                    plugins = new
+                    {
+                        legend = new { display = ShowLegend },
+                        tooltip = new { enabled = ShowTooltips }
+                    },
+                    scales = new
+                    {
+                        x = new
+                        {
+                            grid = new { display = ShowGrid },
+                            title = new
+                            {
+                                display = !string.IsNullOrEmpty(XAxisLabel),
+                                text = XAxisLabel
+                            }
+                        },
+                        y = new
+                        {
+                            grid = new { display = ShowGrid },
+                            title = new
+                            {
+                                display = !string.IsNullOrEmpty(YAxisLabel),
+                                text = YAxisLabel
+                            }
+                        }
+                    }
+                }
+            };
+
+            await JS.InvokeVoidAsync("chartHelpers.createChart", ChartId, config);
+        }
+
+        public override async Task UpdateData(object data)
+        {
+            if (data is LineChartData lineData)
+            {
+                Labels = lineData.Labels;
+                Datasets = lineData.Datasets;
+                await JS.InvokeVoidAsync("chartHelpers.updateChart", ChartId, new { labels = Labels, datasets = Datasets });
+            }
+        }
+    }
+
+    // === PieChart ===
+    public class PieChart : ChartComponentBase
+    {
+        [Parameter] public List<string> Labels { get; set; } = new();
+        [Parameter] public List<double> Data { get; set; } = new();
+        [Parameter] public List<string>? BackgroundColors { get; set; }
+        [Parameter] public bool IsDoughnut { get; set; } = false;
+        [Parameter] public double CutoutPercentage { get; set; } = 50;
+        [Parameter] public string LegendPosition { get; set; } = "right";
+
+        protected override async Task InitializeChart()
+        {
+            var colors = BackgroundColors ?? GenerateDefaultColors(Data.Count);
+
+            var config = new
+            {
+                type = IsDoughnut ? "doughnut" : "pie",
+                data = new
+                {
+                    labels = Labels,
+                    datasets = new[]
+                    {
+                        new
+                        {
+                            data = Data,
+                            backgroundColor = colors,
+                            borderWidth = 2,
+                            borderColor = "#fff"
+                        }
+                    }
+                },
+                options = new
+                {
+                    responsive = Responsive,
+                    maintainAspectRatio = false,
+                    cutout = IsDoughnut ? $"{CutoutPercentage}%" : "0%",
+                    plugins = new
+                    {
+                        legend = new
+                        {
+                            display = ShowLegend,
+                            position = LegendPosition
+                        },
+                        tooltip = new
+                        {
+                            enabled = ShowTooltips
+                        }
+                    }
+                }
+            };
+
+            await JS.InvokeVoidAsync("chartHelpers.createChart", ChartId, config);
+        }
+
+        public override async Task UpdateData(object data)
+        {
+            if (data is PieChartData pieData)
+            {
+                Labels = pieData.Labels;
+                Data = pieData.Data;
+                BackgroundColors = pieData.BackgroundColors;
+                await JS.InvokeVoidAsync("chartHelpers.updateChart", ChartId, new
+                {
+                    labels = Labels,
+                    datasets = new[] { new { data = Data, backgroundColor = BackgroundColors } }
+                });
+            }
+        }
+
+        private List<string> GenerateDefaultColors(int count)
+        {
+            var colors = new[] { "#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899", "#14b8a6", "#f97316", "#6366f1" };
+            var result = new List<string>();
+            for (int i = 0; i < count; i++)
+                result.Add(colors[i % colors.Length]);
+            return result;
+        }
+    }
+
+    // === AreaChart ===
+    public class AreaChart : ChartComponentBase
+    {
+        [Parameter] public List<string> Labels { get; set; } = new();
+        [Parameter] public List<AreaDataset> Datasets { get; set; } = new();
+        [Parameter] public bool Stacked { get; set; } = true;
+        [Parameter] public string YAxisLabel { get; set; } = "";
+        [Parameter] public string XAxisLabel { get; set; } = "";
+
+        protected override async Task InitializeChart()
+        {
+            var config = new
+            {
+                type = "line",
+                data = new
+                {
+                    labels = Labels,
+                    datasets = Datasets.Select((d, index) => new
+                    {
+                        label = d.Label,
+                        data = d.Data,
+                        borderColor = d.BorderColor ?? GetDefaultColor(index),
+                        backgroundColor = d.BackgroundColor ?? GetDefaultColor(index, 0.3f),
+                        borderWidth = 2,
+                        fill = Stacked,
+                        tension = 0.4
+                    })
+                },
+                options = new
+                {
+                    responsive = Responsive,
+                    maintainAspectRatio = false,
+                    plugins = new
+                    {
+                        legend = new { display = ShowLegend },
+                        tooltip = new { enabled = ShowTooltips, mode = "index", intersect = false }
+                    },
+                    scales = new
+                    {
+                        x = new
+                        {
+                            title = new
+                            {
+                                display = !string.IsNullOrEmpty(XAxisLabel),
+                                text = XAxisLabel
+                            }
+                        },
+                        y = new
+                        {
+                            stacked = Stacked,
+                            title = new
+                            {
+                                display = !string.IsNullOrEmpty(YAxisLabel),
+                                text = YAxisLabel
+                            }
+                        }
+                    }
+                }
+            };
+
+            await JS.InvokeVoidAsync("chartHelpers.createChart", ChartId, config);
+        }
+
+        public override async Task UpdateData(object data)
+        {
+            if (data is AreaChartData areaData)
+            {
+                Labels = areaData.Labels;
+                Datasets = areaData.Datasets;
+                await JS.InvokeVoidAsync("chartHelpers.updateChart", ChartId, new { labels = Labels, datasets = Datasets });
+            }
+        }
+
+        private string GetDefaultColor(int index, float alpha = 1)
+        {
+            var colors = new[] { "#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6" };
+            var color = colors[index % colors.Length];
+            if (alpha < 1)
+            {
+                var hex = color.Replace("#", "");
+                int r = Convert.ToInt32(hex.Substring(0, 2), 16);
+                int g = Convert.ToInt32(hex.Substring(2, 2), 16);
+                int b = Convert.ToInt32(hex.Substring(4, 2), 16);
+                return $"rgba({r}, {g}, {b}, {alpha})";
+            }
+            return color;
+        }
+    }
+
+    // === RadarChart ===
+    public class RadarChart : ChartComponentBase
+    {
+        [Parameter] public List<string> Labels { get; set; } = new();
+        [Parameter] public List<RadarDataset> Datasets { get; set; } = new();
+        [Parameter] public double MinValue { get; set; } = 0;
+        [Parameter] public double MaxValue { get; set; } = 100;
+        [Parameter] public int StepSize { get; set; } = 20;
+        [Parameter] public bool ShowPoints { get; set; } = true;
+
+        protected override async Task InitializeChart()
+        {
+            var config = new
+            {
+                type = "radar",
+                data = new
+                {
+                    labels = Labels,
+                    datasets = Datasets.Select((d, index) => new
+                    {
+                        label = d.Label,
+                        data = d.Data,
+                        borderColor = d.BorderColor ?? GetDefaultColor(index),
+                        backgroundColor = d.BackgroundColor ?? GetDefaultColor(index, 0.2f),
+                        borderWidth = 2,
+                        pointRadius = ShowPoints ? 4 : 0,
+                        pointHoverRadius = ShowPoints ? 6 : 0
+                    })
+                },
+                options = new
+                {
+                    responsive = Responsive,
+                    maintainAspectRatio = false,
+                    plugins = new
+                    {
+                        legend = new { display = ShowLegend },
+                        tooltip = new { enabled = ShowTooltips }
+                    },
+                    scales = new
+                    {
+                        r = new
+                        {
+                            beginAtZero = true,
+                            min = MinValue,
+                            max = MaxValue,
+                            ticks = new { stepSize = StepSize }
+                        }
+                    }
+                }
+            };
+
+            await JS.InvokeVoidAsync("chartHelpers.createChart", ChartId, config);
+        }
+
+        public override async Task UpdateData(object data)
+        {
+            if (data is RadarChartData radarData)
+            {
+                Labels = radarData.Labels;
+                Datasets = radarData.Datasets;
+                await JS.InvokeVoidAsync("chartHelpers.updateChart", ChartId, new { labels = Labels, datasets = Datasets });
+            }
+        }
+
+        private string GetDefaultColor(int index, float alpha = 1)
+        {
+            var colors = new[] { "#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6" };
+            var color = colors[index % colors.Length];
+            if (alpha < 1)
+            {
+                var hex = color.Replace("#", "");
+                int r = Convert.ToInt32(hex.Substring(0, 2), 16);
+                int g = Convert.ToInt32(hex.Substring(2, 2), 16);
+                int b = Convert.ToInt32(hex.Substring(4, 2), 16);
+                return $"rgba({r}, {g}, {b}, {alpha})";
+            }
+            return color;
+        }
+    }
+
+    // === DoughnutStatChart ===
+    public class DoughnutStatChart : ChartComponentBase
+    {
+        [Parameter] public double Value { get; set; }
+        [Parameter] public double MaxValue { get; set; } = 100;
+        [Parameter] public string Label { get; set; } = "";
+        [Parameter] public string Unit { get; set; } = "%";
+        [Parameter] public string PrimaryColor { get; set; } = "#3b82f6";
+        [Parameter] public string BackgroundSegmentColor { get; set; } = "#e5e7eb";
+        [Parameter] public bool Animated { get; set; } = true;
+
+        protected override async Task InitializeChart()
+        {
+            var percentage = (Value / MaxValue) * 100;
+            var remaining = 100 - percentage;
+
+            var config = new
+            {
+                type = "doughnut",
+                data = new
+                {
+                    datasets = new[]
+                    {
+                        new
+                        {
+                            data = new[] { percentage, remaining },
+                            backgroundColor = new[] { PrimaryColor, BackgroundSegmentColor },
+                            borderWidth = 0
+                        }
+                    }
+                },
+                options = new
+                {
+                    responsive = Responsive,
+                    maintainAspectRatio = false,
+                    cutout = "75%",
+                    plugins = new
+                    {
+                        legend = new { display = false },
+                        tooltip = new { enabled = false }
+                    },
+                    animation = new
+                    {
+                        animateRotate = Animated,
+                        animateScale = Animated
+                    }
+                }
+            };
+
+            await JS.InvokeVoidAsync("chartHelpers.createChart", ChartId, config);
+            await JS.InvokeVoidAsync("chartHelpers.addCenterText", ChartId, $"{Value}{Unit}", Label);
+        }
+
+        public override async Task UpdateData(object data)
+        {
+            if (data is double newValue)
+            {
+                Value = newValue;
+                var percentage = (Value / MaxValue) * 100;
+                var remaining = 100 - percentage;
+
+                await JS.InvokeVoidAsync("chartHelpers.updateChart", ChartId, new
+                {
+                    datasets = new[]
+                    {
+                        new { data = new[] { percentage, remaining } }
+                    }
+                });
+
+                await JS.InvokeVoidAsync("chartHelpers.updateCenterText", ChartId, $"{Value}{Unit}");
+            }
+        }
+    }
+}

@@ -1,0 +1,832 @@
+@page "/competences"
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.EntityFrameworkCore
+@using PlanningPresenceBlazor.Data
+@using PlanningPresenceBlazor.Services
+@inject PlanningDbContext DbContext
+@inject ToastService ToastService
+
+<!-- En-tête de page -->
+<div class="page-header">
+    <h1 class="page-title">
+        <i class="bi bi-award"></i>
+        Gestion des Compétences
+    </h1>
+    <p class="page-subtitle">Gérez les compétences et certifications de vos équipes</p>
+</div>
+
+<!-- Actions et statistiques -->
+<div class="row mb-4">
+    <div class="col-md-8">
+        <button class="btn btn-success btn-modern" @onclick="ShowAddCompetenceModal">
+            <i class="bi bi-plus-circle me-2"></i>Nouvelle compétence
+        </button>
+        <button class="btn btn-outline-primary btn-modern ms-2" @onclick="LoadData">
+            <i class="bi bi-arrow-clockwise me-2"></i>Actualiser
+        </button>
+    </div>
+    <div class="col-md-4 text-end">
+        <span class="badge bg-primary fs-6">@competences.Count compétence(s)</span>
+        <span class="badge bg-success fs-6 ms-2">@GetTotalCertifiedCount() certifié(s)</span>
+    </div>
+</div>
+
+<!-- Filtres -->
+<div class="card card-modern mb-4">
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Rechercher</label>
+                <input type="text" class="form-control form-control-modern"
+                       placeholder="Nom de la compétence..."
+                       @bind="searchTerm" @bind:event="oninput" />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Catégorie</label>
+                <select class="form-select form-control-modern" @bind="filterCategory">
+                    <option value="">Toutes</option>
+                    @foreach (var cat in Enum.GetValues<CategorieCompetence>())
+                    {
+                        <option value="@cat">@GetCategoryDisplay(cat)</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Équipe</label>
+                <select class="form-select form-control-modern" @bind="filterTeamId">
+                    <option value="0">Toutes</option>
+                    @foreach (var team in teams)
+                    {
+                        <option value="@team.Id">@team.Nom</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">&nbsp;</label>
+                <button class="btn btn-primary btn-modern w-100" @onclick="ApplyFilters">
+                    <i class="bi bi-funnel me-2"></i>Filtrer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Onglets -->
+<ul class="nav nav-tabs mb-4">
+    <li class="nav-item">
+        <button class="nav-link @(activeTab == "competences" ? "active" : "")"
+                @onclick="@(() => SetActiveTab("competences"))">
+            <i class="bi bi-list me-2"></i>Compétences
+        </button>
+
+    </li>
+    <li class="nav-item">
+        <button class="nav-link @(activeTab == "employees" ? "active" : "")"
+                @onclick="@(() => SetActiveTab("employees"))">
+            <i class="bi bi-list me-2"></i>Par employé
+        </button>
+
+    </li>
+    <li class="nav-item">
+        <button class="nav-link @(activeTab == "matrix" ? "active" : "")"
+                @onclick="@(() => SetActiveTab("matrix"))">
+            <i class="bi bi-list me-2"></i>Matrice
+        </button>
+    </li>
+</ul>
+
+<!-- Contenu selon l'onglet actif -->
+@if (activeTab == "competences")
+{
+    <!-- Liste des compétences -->
+    <div class="row">
+        @foreach (var competence in GetFilteredCompetences())
+        {
+            <div class="col-md-6 mb-4">
+                <div class="card card-modern">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="bi bi-@GetCategoryIcon(competence.Categorie) me-2 text-primary"></i>
+                            @competence.Nom
+                        </h5>
+                        <span class="badge @GetCategoryBadgeClass(competence.Categorie)">
+                            @GetCategoryDisplay(competence.Categorie)
+                        </span>
+                    </div>
+                    <div class="card-body">
+                        @if (!string.IsNullOrEmpty(competence.Description))
+                        {
+                            <p class="text-muted mb-3">@competence.Description</p>
+                        }
+
+                        <div class="mb-3">
+                            <strong>Employés avec cette compétence:</strong>
+                            <div class="mt-2">
+                                @if (competence.Employes.Any())
+                                {
+                                    <div class="d-flex flex-wrap gap-1">
+                                        @foreach (var emp in competence.Employes.OrderByDescending(e => e.Niveau).Take(5))
+                                        {
+                                            <span class="badge bg-light text-dark">
+                                                @emp.Employe.Nom
+                                                <span class="badge bg-primary ms-1">Niv.@emp.Niveau</span>
+                                                @if (emp.EstCertifie)
+                                                {
+                                                    <i class="bi bi-patch-check-fill text-success ms-1"></i>
+                                                }
+                                            </span>
+                                        }
+                                        @if (competence.Employes.Count > 5)
+                                        {
+                                            <span class="badge bg-secondary">+@(competence.Employes.Count - 5)</span>
+                                        }
+                                    </div>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">Aucun employé</span>
+                                }
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <span class="text-muted">
+                                    <i class="bi bi-person me-1"></i>@competence.Employes.Count employé(s) |
+                                    <i class="bi bi-patch-check ms-2 me-1"></i>@competence.Employes.Count(e => e.EstCertifie) certifié(s)
+                                </span>
+                            </div>
+                            <div>
+                                <button class="btn btn-sm btn-outline-primary" @onclick="() => EditCompetence(competence)">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-info ms-1" @onclick="() => ManageEmployeeCompetences(competence)">
+                                    <i class="bi bi-person-plus"></i>
+                                </button>
+                                @if (!competence.Employes.Any())
+                                {
+                                    <button class="btn btn-sm btn-outline-danger ms-1" @onclick="() => DeleteCompetence(competence)">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+else if (activeTab == "employees")
+{
+    <!-- Vue par employé -->
+    <div class="row">
+        @foreach (var employee in GetFilteredEmployees())
+        {
+            <div class="col-md-6 col-lg-4 mb-4">
+                <div class="card card-modern">
+                    <div class="card-header">
+                        <h6 class="mb-0">
+                            <i class="bi bi-person-circle me-2"></i>
+                            @employee.Nom
+                            <span class="badge bg-secondary ms-2">@employee.Equipe?.Nom</span>
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="competence-list">
+                            @if (employee.Competences.Any())
+                            {
+                                @foreach (var comp in employee.Competences.OrderByDescending(c => c.Niveau))
+                                {
+                                    <div class="competence-item mb-2 p-2 bg-light rounded">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <strong>@comp.Competence.Nom</strong>
+                                                @if (comp.EstCertifie)
+                                                {
+                                                    <i class="bi bi-patch-check-fill text-success ms-1"
+                                                       title="Certifié"></i>
+                                                }
+                                            </div>
+                                            <div>
+                                                @for (int i = 1; i <= 5; i++)
+                                                {
+                                                    <i class="bi bi-star-fill @(i <= comp.Niveau ? "text-warning" : "text-muted")"></i>
+                                                }
+                                            </div>
+                                        </div>
+                                        @if (comp.DateExpiration.HasValue)
+                                        {
+                                            <small class="text-muted">
+                                                Expire le @comp.DateExpiration.Value.ToString("dd/MM/yyyy")
+                                                @if (comp.DateExpiration.Value < DateTime.Today.AddDays(30))
+                                                {
+                                                    <span class="badge bg-warning ms-1">Bientôt</span>
+                                                }
+                                            </small>
+                                        }
+                                    </div>
+                                }
+                            }
+                            else
+                            {
+                                <p class="text-muted mb-0">Aucune compétence enregistrée</p>
+                            }
+                        </div>
+                        <div class="mt-3">
+                            <button class="btn btn-sm btn-primary w-100"
+                                    @onclick="() => ManageEmployeeCompetencesForEmployee(employee)">
+                                <i class="bi bi-plus-circle me-1"></i>Gérer compétences
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+else if (activeTab == "matrix")
+{
+    <!-- Matrice de compétences -->
+    <div class="card card-modern">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered table-hover">
+                    <thead>
+                    <tr>
+                        <th>Employé / Compétence</th>
+                        @foreach (var comp in GetMatrixCompetences())
+                        {
+                            <th class="text-center" style="writing-mode: vertical-lr; min-width: 40px;">
+                                @comp.Nom
+                            </th>
+                        }
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var employee in GetMatrixEmployees())
+                    {
+                        <tr>
+                            <td>
+                                <strong>@employee.Nom</strong>
+                                <small class="text-muted d-block">@employee.Equipe?.Nom</small>
+                            </td>
+                            @foreach (var comp in GetMatrixCompetences())
+                            {
+                                var empComp = employee.Competences
+                                    .FirstOrDefault(ec => ec.CompetenceId == comp.Id);
+
+                                <td class="text-center align-middle">
+                                    @if (empComp != null)
+                                    {
+                                        <div class="competence-cell"
+                                             style="background-color: @GetLevelColor(empComp.Niveau)">
+                                            <span class="fw-bold">@empComp.Niveau</span>
+                                            @if (empComp.EstCertifie)
+                                            {
+                                                <i class="bi bi-patch-check-fill text-white"></i>
+                                            }
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">-</span>
+                                    }
+                                </td>
+                            }
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Modal d'ajout/modification de compétence -->
+@if (showCompetenceModal)
+{
+    <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-@(editingCompetence?.Id > 0 ? "pencil" : "plus-circle") me-2"></i>
+                        @(editingCompetence?.Id > 0 ? "Modifier" : "Ajouter") une compétence
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseCompetenceModal"></button>
+                </div>
+
+                <EditForm Model="editingCompetence" OnValidSubmit="SaveCompetence">
+                    <DataAnnotationsValidator />
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label">Nom *</label>
+                            <InputText @bind-Value="editingCompetence.Nom" class="form-control" />
+                            <ValidationMessage For="@(() => editingCompetence.Nom)" class="text-danger" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Catégorie</label>
+                            <InputSelect @bind-Value="editingCompetence.Categorie" class="form-select">
+                                @foreach (var cat in Enum.GetValues<CategorieCompetence>())
+                                {
+                                    <option value="@cat">@GetCategoryDisplay(cat)</option>
+                                }
+                            </InputSelect>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Description</label>
+                            <InputTextArea @bind-Value="editingCompetence.Description" class="form-control" rows="3" />
+                        </div>
+
+                        <div class="form-check">
+                            <InputCheckbox @bind-Value="editingCompetence.EstActive" class="form-check-input" id="competenceActive" />
+                            <label class="form-check-label" for="competenceActive">
+                                Compétence active
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @onclick="CloseCompetenceModal">
+                            Annuler
+                        </button>
+                        <button type="submit" class="btn btn-primary" disabled="@isSaving">
+                            @if (isSaving)
+                            {
+                                <div class="spinner-border spinner-border-sm me-2"></div>
+                            }
+                            <i class="bi bi-check-circle me-1"></i>
+                            @(editingCompetence?.Id > 0 ? "Modifier" : "Ajouter")
+                        </button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Modal de gestion des compétences d'un employé -->
+@if (showEmployeeCompetencesModal && selectedEmployee != null)
+{
+    <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-award me-2"></i>
+                        Compétences de @selectedEmployee.Nom
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseEmployeeCompetencesModal"></button>
+                </div>
+
+                <div class="modal-body">
+                    <!-- Compétences actuelles -->
+                    <h6>Compétences actuelles</h6>
+                    <div class="mb-4">
+                        @if (selectedEmployee.Competences.Any())
+                        {
+                            <div class="list-group">
+                                @foreach (var ec in selectedEmployee.Competences.OrderByDescending(c => c.Niveau))
+                                {
+                                    <div class="list-group-item">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <strong>@ec.Competence.Nom</strong>
+                                                <span class="badge bg-info ms-2">Niveau @ec.Niveau</span>
+                                                @if (ec.EstCertifie)
+                                                {
+                                                    <span class="badge bg-success ms-1">
+                                                        <i class="bi bi-patch-check"></i> Certifié
+                                                    </span>
+                                                }
+                                            </div>
+                                            <button class="btn btn-sm btn-outline-danger"
+                                                    @onclick="() => RemoveEmployeeCompetence(ec)">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <p class="text-muted">Aucune compétence assignée</p>
+                        }
+                    </div>
+
+                    <!-- Ajouter une compétence -->
+                    <h6>Ajouter une compétence</h6>
+                    <div class="row g-3">
+                        <div class="col-md-5">
+                            <select @bind="newEmployeeCompetence.CompetenceId" class="form-select">
+                                <option value="0">-- Sélectionner --</option>
+                                @foreach (var comp in GetAvailableCompetences())
+                                {
+                                    <option value="@comp.Id">@comp.Nom</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <input type="number" @bind="newEmployeeCompetence.Niveau"
+                                   class="form-control" placeholder="Niveau" min="1" max="5" />
+                        </div>
+                        <div class="col-md-3">
+                            <div class="form-check mt-2">
+                                <input type="checkbox" @bind="newEmployeeCompetence.EstCertifie"
+                                       class="form-check-input" id="certifie" />
+                                <label class="form-check-label" for="certifie">
+                                    Certifié
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <button class="btn btn-success" @onclick="AddEmployeeCompetence">
+                                <i class="bi bi-plus-circle"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" @onclick="CloseEmployeeCompetencesModal">
+                        Fermer
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .competence-cell {
+        width: 36px;
+        height: 36px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        color: white;
+        font-weight: bold;
+    }
+
+    .competence-item {
+        transition: all 0.2s;
+    }
+
+    .competence-item:hover {
+        transform: translateX(5px);
+    }
+</style>
+
+@code {
+    private List<Competence> competences = new();
+    private List<Employe> employees = new();
+    private List<Equipe> teams = new();
+
+    private string activeTab = "competences";
+    private bool showCompetenceModal = false;
+    private bool showEmployeeCompetencesModal = false;
+    private bool isSaving = false;
+
+    private Competence editingCompetence = new();
+    private Employe? selectedEmployee;
+    private EmployeCompetence newEmployeeCompetence = new();
+
+    // Filtres
+    private string searchTerm = "";
+    private string filterCategory = "";
+    private int filterTeamId = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        competences = await DbContext.Competences
+            .Include(c => c.Employes)
+            .ThenInclude(ec => ec.Employe)
+            .ThenInclude(e => e.Equipe)
+            .Where(c => c.EstActive)
+            .ToListAsync();
+
+        employees = await DbContext.Employes
+            .Include(e => e.Competences)
+            .ThenInclude(ec => ec.Competence)
+            .Include(e => e.Equipe)
+            .Where(e => e.EstActif)
+            .ToListAsync();
+
+        teams = await DbContext.Equipes
+            .Where(t => t.EstActive)
+            .ToListAsync();
+
+        StateHasChanged();
+    }
+
+    private void SetActiveTab(string tab)
+    {
+        activeTab = tab;
+    }
+
+    private void ApplyFilters()
+    {
+        // Les filtres sont appliqués dans les méthodes GetFiltered*
+        StateHasChanged();
+    }
+
+    private List<Competence> GetFilteredCompetences()
+    {
+        var query = competences.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            query = query.Where(c => c.Nom.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrEmpty(filterCategory) && Enum.TryParse<CategorieCompetence>(filterCategory, out var cat))
+        {
+            query = query.Where(c => c.Categorie == cat);
+        }
+
+        if (filterTeamId > 0)
+        {
+            query = query.Where(c => c.Employes.Any(ec => ec.Employe.EquipeId == filterTeamId));
+        }
+
+        return query.OrderBy(c => c.Nom).ToList();
+    }
+
+    private List<Employe> GetFilteredEmployees()
+    {
+        var query = employees.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            query = query.Where(e => e.Nom.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (filterTeamId > 0)
+        {
+            query = query.Where(e => e.EquipeId == filterTeamId);
+        }
+
+        return query.OrderBy(e => e.Nom).ToList();
+    }
+
+    private List<Competence> GetMatrixCompetences()
+    {
+        return competences.OrderBy(c => c.Categorie).ThenBy(c => c.Nom).ToList();
+    }
+
+    private List<Employe> GetMatrixEmployees()
+    {
+        var query = employees.AsQueryable();
+
+        if (filterTeamId > 0)
+        {
+            query = query.Where(e => e.EquipeId == filterTeamId);
+        }
+
+        return query.OrderBy(e => e.Equipe.Nom).ThenBy(e => e.Nom).ToList();
+    }
+
+    private int GetTotalCertifiedCount()
+    {
+        return competences.Sum(c => c.Employes.Count(e => e.EstCertifie));
+    }
+
+    private void ShowAddCompetenceModal()
+    {
+        editingCompetence = new Competence
+        {
+            EstActive = true,
+            Categorie = CategorieCompetence.Technique
+        };
+        showCompetenceModal = true;
+    }
+
+    private void EditCompetence(Competence competence)
+    {
+        editingCompetence = new Competence
+        {
+            Id = competence.Id,
+            Nom = competence.Nom,
+            Description = competence.Description,
+            Categorie = competence.Categorie,
+            EstActive = competence.EstActive
+        };
+        showCompetenceModal = true;
+    }
+
+    private async Task SaveCompetence()
+    {
+        try
+        {
+            isSaving = true;
+
+            if (editingCompetence.Id > 0)
+            {
+                // Modification
+                var existing = await DbContext.Competences.FindAsync(editingCompetence.Id);
+                if (existing != null)
+                {
+                    existing.Nom = editingCompetence.Nom;
+                    existing.Description = editingCompetence.Description;
+                    existing.Categorie = editingCompetence.Categorie;
+                    existing.EstActive = editingCompetence.EstActive;
+                }
+            }
+            else
+            {
+                // Création
+                DbContext.Competences.Add(editingCompetence);
+            }
+
+            await DbContext.SaveChangesAsync();
+            ToastService.ShowSuccess("Compétence sauvegardée avec succès", "Sauvegarde réussie");
+
+            CloseCompetenceModal();
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur lors de la sauvegarde: {ex.Message}", "Erreur");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task DeleteCompetence(Competence competence)
+    {
+        try
+        {
+            DbContext.Competences.Remove(competence);
+            await DbContext.SaveChangesAsync();
+
+            ToastService.ShowSuccess("Compétence supprimée", "Suppression réussie");
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur: {ex.Message}", "Erreur");
+        }
+    }
+
+    private void ManageEmployeeCompetences(Competence competence)
+    {
+        // TODO: Implémenter la gestion des employés pour une compétence
+        ToastService.ShowInfo("Fonction en développement", "À venir");
+    }
+
+    private void ManageEmployeeCompetencesForEmployee(Employe employee)
+    {
+        selectedEmployee = employee;
+        newEmployeeCompetence = new EmployeCompetence
+        {
+            EmployeId = employee.Id,
+            Niveau = 1,
+            EstCertifie = false
+        };
+        showEmployeeCompetencesModal = true;
+    }
+
+    private List<Competence> GetAvailableCompetences()
+    {
+        if (selectedEmployee == null) return new List<Competence>();
+
+        var existingCompetenceIds = selectedEmployee.Competences.Select(ec => ec.CompetenceId).ToHashSet();
+        return competences.Where(c => !existingCompetenceIds.Contains(c.Id)).ToList();
+    }
+
+    private async Task AddEmployeeCompetence()
+    {
+        if (newEmployeeCompetence.CompetenceId == 0 || selectedEmployee == null)
+        {
+            ToastService.ShowWarning("Veuillez sélectionner une compétence", "Sélection requise");
+            return;
+        }
+
+        try
+        {
+            newEmployeeCompetence.EmployeId = selectedEmployee.Id;
+            DbContext.EmployeCompetences.Add(newEmployeeCompetence);
+            await DbContext.SaveChangesAsync();
+
+            ToastService.ShowSuccess("Compétence ajoutée", "Ajout réussi");
+
+            // Recharger les données
+            await LoadData();
+            selectedEmployee = employees.First(e => e.Id == selectedEmployee.Id);
+
+            // Réinitialiser le formulaire
+            newEmployeeCompetence = new EmployeCompetence
+            {
+                EmployeId = selectedEmployee.Id,
+                Niveau = 1,
+                EstCertifie = false
+            };
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur: {ex.Message}", "Erreur");
+        }
+    }
+
+    private async Task RemoveEmployeeCompetence(EmployeCompetence ec)
+    {
+        try
+        {
+            DbContext.EmployeCompetences.Remove(ec);
+            await DbContext.SaveChangesAsync();
+
+            ToastService.ShowSuccess("Compétence retirée", "Suppression réussie");
+
+            // Recharger les données
+            await LoadData();
+            if (selectedEmployee != null)
+            {
+                selectedEmployee = employees.First(e => e.Id == selectedEmployee.Id);
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur: {ex.Message}", "Erreur");
+        }
+    }
+
+    private string GetCategoryDisplay(CategorieCompetence cat)
+    {
+        return cat switch
+        {
+            CategorieCompetence.Technique => "Technique",
+            CategorieCompetence.Fonctionnelle => "Fonctionnelle",
+            CategorieCompetence.Linguistique => "Linguistique",
+            CategorieCompetence.Certification => "Certification",
+            CategorieCompetence.Permis => "Permis",
+            CategorieCompetence.Autre => "Autre",
+            _ => cat.ToString()
+        };
+    }
+
+    private string GetCategoryIcon(CategorieCompetence cat)
+    {
+        return cat switch
+        {
+            CategorieCompetence.Technique => "code-slash",
+            CategorieCompetence.Fonctionnelle => "briefcase",
+            CategorieCompetence.Linguistique => "translate",
+            CategorieCompetence.Certification => "patch-check",
+            CategorieCompetence.Permis => "card-text",
+            CategorieCompetence.Autre => "three-dots",
+            _ => "tag"
+        };
+    }
+
+    private string GetCategoryBadgeClass(CategorieCompetence cat)
+    {
+        return cat switch
+        {
+            CategorieCompetence.Technique => "bg-primary",
+            CategorieCompetence.Fonctionnelle => "bg-success",
+            CategorieCompetence.Linguistique => "bg-info",
+            CategorieCompetence.Certification => "bg-warning",
+            CategorieCompetence.Permis => "bg-secondary",
+            CategorieCompetence.Autre => "bg-dark",
+            _ => "bg-secondary"
+        };
+    }
+
+    private string GetLevelColor(int level)
+    {
+        return level switch
+        {
+            5 => "#198754", // Vert foncé
+            4 => "#20c997", // Vert clair
+            3 => "#ffc107", // Jaune
+            2 => "#fd7e14", // Orange
+            1 => "#dc3545", // Rouge
+            _ => "#6c757d"  // Gris
+        };
+    }
+
+    private void CloseCompetenceModal()
+    {
+        showCompetenceModal = false;
+        editingCompetence = new();
+    }
+
+    private void CloseEmployeeCompetencesModal()
+    {
+        showEmployeeCompetencesModal = false;
+        selectedEmployee = null;
+        newEmployeeCompetence = new();
+    }
+}

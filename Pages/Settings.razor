@@ -1,0 +1,647 @@
+@page "/settings"
+@using PlanningPresenceBlazor.Services
+@using PlanningPresenceBlazor.Data
+@inject ToastService ToastService
+@inject NavigationManager Navigation
+
+<!-- En-tête de page -->
+<div class="page-header">
+    <h1 class="page-title">
+        <i class="bi bi-gear-fill"></i>
+        Paramètres
+    </h1>
+    <p class="page-subtitle">Personnalisez votre expérience et gérez vos préférences</p>
+</div>
+
+<div class="row">
+    <!-- Menu de navigation des paramètres -->
+    <div class="col-md-3">
+        <div class="card card-modern">
+            <div class="card-body p-0">
+                <div class="settings-nav">
+                    <button class="settings-nav-item @(activeTab == "profile" ? "active" : "")"
+                            @onclick='() => SetActiveTab("profile")'>
+                        <i class="bi bi-person-circle me-2"></i>
+                        Profil
+                    </button>
+                    <button class="settings-nav-item @(activeTab == "notifications" ? "active" : "")"
+                            @onclick='() => SetActiveTab("notifications")'>
+                        <i class="bi bi-bell me-2"></i>
+                        Notifications
+                    </button>
+                    <button class="settings-nav-item @(activeTab == "display" ? "active" : "")"
+                            @onclick='() => SetActiveTab("display")'>
+                        <i class="bi bi-palette me-2"></i>
+                        Affichage
+                    </button>
+                    <button class="settings-nav-item @(activeTab == "planning" ? "active" : "")"
+                            @onclick='() => SetActiveTab("planning")'>
+                        <i class="bi bi-calendar3 me-2"></i>
+                        Planning
+                    </button>
+                    <button class="settings-nav-item @(activeTab == "export" ? "active" : "")"
+                            @onclick='() => SetActiveTab("export")'>
+                        <i class="bi bi-download me-2"></i>
+                        Export/Import
+                    </button>
+                    <button class="settings-nav-item @(activeTab == "security" ? "active" : "")"
+                            @onclick='() => SetActiveTab("security")'>
+                        <i class="bi bi-shield-lock me-2"></i>
+                        Sécurité
+                    </button>
+                    <button class="settings-nav-item @(activeTab == "about" ? "active" : "")"
+                            @onclick='() => SetActiveTab("about")'>
+                        <i class="bi bi-info-circle me-2"></i>
+                        À propos
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Contenu des paramètres -->
+    <div class="col-md-9">
+        <div class="card card-modern">
+            <div class="card-body">
+                @switch (activeTab)
+                {
+                    case "profile":
+                        <ProfileSettings />
+                        break;
+                    case "notifications":
+                        <NotificationSettings />
+                        break;
+                    case "display":
+                        <DisplaySettings />
+                        break;
+                    case "planning":
+                        <PlanningSettings />
+                        break;
+                    case "export":
+                        <ExportImportSettings />
+                        break;
+                    case "security":
+                        <SecuritySettings />
+                        break;
+                    case "about":
+                        <AboutSection />
+                        break;
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string activeTab = "profile";
+
+    private void SetActiveTab(string tab)
+    {
+        activeTab = tab;
+    }
+
+    // Composant: Paramètres de profil
+    private RenderFragment ProfileSettings => @<div>
+                                                  <h4 class="mb-4">
+                                                      <i class="bi bi-person-circle me-2"></i>
+                                                      Informations du profil
+                                                  </h4>
+
+                                                  <form @onsubmit:preventDefault="true">
+                                                      <div class="row mb-3">
+                                                          <div class="col-md-6">
+                                                              <label class="form-label">Nom complet</label>
+                                                              <input type="text" class="form-control form-control-modern" value="Administrateur" />
+                                                          </div>
+                                                          <div class="col-md-6">
+                                                              <label class="form-label">Email</label>
+                                                              <input type="email" class="form-control form-control-modern" value="admin@planningpresence.com" />
+                                                          </div>
+                                                      </div>
+
+                                                      <div class="row mb-3">
+                                                          <div class="col-md-6">
+                                                              <label class="form-label">Rôle</label>
+                                                              <select class="form-select form-control-modern">
+                                                                  <option>Administrateur</option>
+                                                                  <option>Manager</option>
+                                                                  <option>Utilisateur</option>
+                                                              </select>
+                                                          </div>
+                                                          <div class="col-md-6">
+                                                              <label class="form-label">Département</label>
+                                                              <input type="text" class="form-control form-control-modern" value="Resources Humaines" />
+                                                          </div>
+                                                      </div>
+
+                                                      <div class="mb-4">
+                                                          <label class="form-label">Photo de profil</label>
+                                                          <div class="d-flex align-items-center gap-3">
+                                                              <div class="avatar-upload">
+                                                                  <i class="bi bi-person-circle fs-1"></i>
+                                                              </div>
+                                                              <div>
+                                                                  <button class="btn btn-sm btn-primary me-2">Changer la photo</button>
+                                                                  <button class="btn btn-sm btn-outline-danger">Supprimer</button>
+                                                              </div>
+                                                          </div>
+                                                      </div>
+
+                                                      <hr class="my-4" />
+
+                                                      <div class="d-flex justify-content-end">
+                                                          <button class="btn btn-outline-secondary me-2">Annuler</button>
+                                                          <button class="btn btn-primary" @onclick="SaveProfile">
+                                                              <i class="bi bi-check-lg me-2"></i>
+                                                              Enregistrer les modifications
+                                                          </button>
+                                                      </div>
+                                                  </form>
+                                              </div>;
+
+    // Composant: Paramètres de notifications
+    private RenderFragment NotificationSettings => @<div>
+                                                       <h4 class="mb-4">
+                                                           <i class="bi bi-bell me-2"></i>
+                                                           Préférences de notifications
+                                                       </h4>
+                                                       <div class="notification-settings">
+                                                           <div class="form-check form-switch mb-3">
+                                                               <input class="form-check-input" type="checkbox" id="emailNotif" checked>
+                                                               <label class="form-check-label" for="emailNotif">
+                                                                   <strong>Notifications par email</strong>
+                                                                   <p class="text-muted small mb-0">Recevoir des notifications importantes par email</p>
+                                                               </label>
+                                                           </div>
+                                                           <div class="form-check form-switch mb-3">
+                                                               <input class="form-check-input" type="checkbox" id="planningNotif" checked>
+                                                               <label class="form-check-label" for="planningNotif">
+                                                                   <strong>Modifications du planning</strong>
+                                                                   <p class="text-muted small mb-0">Être notifié lors de changements dans le planning</p>
+                                                               </label>
+                                                           </div>
+                                                           <div class="form-check form-switch mb-3">
+                                                               <input class="form-check-input" type="checkbox" id="congeNotif" checked>
+                                                               <label class="form-check-label" for="congeNotif">
+                                                                   <strong>Demandes de congé</strong>
+                                                                   <p class="text-muted small mb-0">Notifications pour les nouvelles demandes et validations</p>
+                                                               </label>
+                                                           </div>
+                                                           <div class="form-check form-switch mb-3">
+                                                               <input class="form-check-input" type="checkbox" id="reportNotif">
+                                                               <label class="form-check-label" for="reportNotif">
+                                                                   <strong>Rapports automatiques</strong>
+                                                                   <p class="text-muted small mb-0">Recevoir des rapports périodiques automatiquement</p>
+                                                               </label>
+                                                           </div>
+                                                           <div class="form-check form-switch mb-3">
+                                                               <input class="form-check-input" type="checkbox" id="reminderNotif" checked>
+                                                               <label class="form-check-label" for="reminderNotif">
+                                                                   <strong>Rappels</strong>
+                                                                   <p class="text-muted small mb-0">Rappels pour les tâches importantes</p>
+                                                               </label>
+                                                           </div>
+                                                       </div>
+                                                       <hr class="my-4" />
+
+                                                       <h5 class="mb-3">Fréquence des notifications</h5>
+                                                       <div class="row mb-4">
+                                                           <div class="col-md-6">
+                                                               <label class="form-label">Résumé quotidien</label>
+                                                               <select class="form-select form-control-modern">
+                                                                   <option>Désactivé</option>
+                                                                   <option selected>8h00</option>
+                                                                   <option>9h00</option>
+                                                                   <option>10h00</option>
+                                                               </select>
+                                                           </div>
+                                                           <div class="col-md-6">
+                                                               <label class="form-label">Rapport hebdomadaire</label>
+                                                               <select class="form-select form-control-modern">
+                                                                   <option>Désactivé</option>
+                                                                   <option>Lundi</option>
+                                                                   <option selected>Vendredi</option>
+                                                               </select>
+                                                           </div>
+                                                       </div>
+                                                       <div class="d-flex justify-content-end">
+                                                           <button class="btn btn-primary" @onclick="SaveNotifications">
+                                                               <i class="bi bi-check-lg me-2"></i>
+                                                               Enregistrer les préférences
+                                                           </button>
+                                                       </div>
+                                                   </div>;
+
+    // Composant: Paramètres d'affichage
+    private RenderFragment DisplaySettings => @<div>
+                                                  <h4 class="mb-4">
+                                                      <i class="bi bi-palette me-2"></i>
+                                                      Préférences d'affichage
+                                                  </h4>
+                                                  <div class="mb-4">
+                                                      <label class="form-label">Thème de l'application</label>
+                                                      <div class="theme-selector">
+                                                          <div class="theme-option @(selectedTheme == "light" ? "selected" : "")"
+                                                               @onclick='() => SelectTheme("light")'>
+                                                              <div class="theme-preview light-theme">
+                                                                  <div class="preview-header"></div>
+                                                                  <div class="preview-content"></div>
+                                                              </div>
+                                                              <span>Clair</span>
+                                                          </div>
+                                                          <div class="theme-option @(selectedTheme == "dark" ? "selected" : "")"
+                                                               @onclick='() => SelectTheme("dark")'>
+                                                              <div class="theme-preview dark-theme">
+                                                                  <div class="preview-header"></div>
+                                                                  <div class="preview-content"></div>
+                                                              </div>
+                                                              <span>Sombre</span>
+                                                          </div>
+                                                          <div class="theme-option @(selectedTheme == "auto" ? "selected" : "")"
+                                                               @onclick='() => SelectTheme("auto")'>
+                                                              <div class="theme-preview auto-theme">
+                                                                  <div class="preview-header"></div>
+                                                                  <div class="preview-content"></div>
+                                                              </div>
+                                                              <span>Automatique</span>
+                                                          </div>
+                                                      </div>
+                                                  </div>
+                                                  <div class="mb-4">
+                                                      <label class="form-label">Couleur d'accentuation</label>
+                                                      <div class="color-picker-grid">
+                                                          <button class="color-option" style="background: #2563eb;" @onclick='() => SelectAccentColor("#2563eb")'>
+                                                              @if (accentColor == "#2563eb") { <i class="bi bi-check text-white"></i> }
+                                                          </button>
+                                                          <button class="color-option" style="background: #dc2626;" @onclick='() => SelectAccentColor("#dc2626")'>
+                                                              @if (accentColor == "#dc2626") { <i class="bi bi-check text-white"></i> }
+                                                          </button>
+                                                          <button class="color-option" style="background: #059669;" @onclick='() => SelectAccentColor("#059669")'>
+                                                              @if (accentColor == "#059669") { <i class="bi bi-check text-white"></i> }
+                                                          </button>
+                                                          <button class="color-option" style="background: #7c3aed;" @onclick='() => SelectAccentColor("#7c3aed")'>
+                                                              @if (accentColor == "#7c3aed") { <i class="bi bi-check text-white"></i> }
+                                                          </button>
+                                                          <button class="color-option" style="background: #ea580c;" @onclick='() => SelectAccentColor("#ea580c")'>
+                                                              @if (accentColor == "#ea580c") { <i class="bi bi-check text-white"></i> }
+                                                          </button>
+                                                          <button class="color-option" style="background: #0891b2;" @onclick='() => SelectAccentColor("#0891b2")'>
+                                                              @if (accentColor == "#0891b2") { <i class="bi bi-check text-white"></i> }
+                                                          </button>
+                                                      </div>
+                                                  </div>
+                                                  <div class="mb-4">
+                                                      <label class="form-label">Taille de police</label>
+                                                      <div class="btn-group w-100" role="group">
+                                                          <button class="btn @(fontSize == "small" ? "btn-primary" : "btn-outline-primary")"
+                                                                  @onclick='() => SetFontSize("small")'>Petite</button>
+                                                          <button class="btn @(fontSize == "medium" ? "btn-primary" : "btn-outline-primary")"
+                                                                  @onclick='() => SetFontSize("medium")'>Moyenne</button>
+                                                          <button class="btn @(fontSize == "large" ? "btn-primary" : "btn-outline-primary")"
+                                                                  @onclick='() => SetFontSize("large")'>Grande</button>
+                                                      </div>
+                                                  </div>
+                                                  <div class="form-check form-switch mb-3">
+                                                      <input class="form-check-input" type="checkbox" id="compactMode">
+                                                      <label class="form-check-label" for="compactMode">
+                                                          Mode compact (moins d'espacement)
+                                                      </label>
+                                                  </div>
+                                                  <div class="form-check form-switch mb-4">
+                                                      <input class="form-check-input" type="checkbox" id="animations" checked>
+                                                      <label class="form-check-label" for="animations">
+                                                          Activer les animations
+                                                      </label>
+                                                  </div>
+                                                  <div class="d-flex justify-content-end">
+                                                      <button class="btn btn-primary" @onclick="SaveDisplaySettings">
+                                                          <i class="bi bi-check-lg me-2"></i>
+                                                          Appliquer les changements
+                                                      </button>
+                                                  </div>
+                                              </div>;
+
+    // Composant: Paramètres du planning
+    private RenderFragment PlanningSettings => @<div>
+                                                   <h4 class="mb-4">
+                                                       <i class="bi bi-calendar3 me-2"></i>
+                                                       Paramètres du planning
+                                                   </h4>
+                                                   <div class="mb-4">
+                                                       <h5 class="mb-3">Vue par défaut</h5>
+                                                       <div class="form-check mb-2">
+                                                           <input class="form-check-input" type="radio" name="defaultView" id="weekView" checked>
+                                                           <label class="form-check-label" for="weekView">
+                                                               Vue hebdomadaire
+                                                           </label>
+                                                       </div>
+                                                       <div class="form-check mb-2">
+                                                           <input class="form-check-input" type="radio" name="defaultView" id="monthView">
+                                                           <label class="form-check-label" for="monthView">
+                                                               Vue mensuelle
+                                                           </label>
+                                                       </div>
+                                                   </div>
+                                                   <div class="mb-4">
+                                                       <label class="form-label">Premier jour de la semaine</label>
+                                                       <select class="form-select form-control-modern">
+                                                           <option selected>Lundi</option>
+                                                           <option>Dimanche</option>
+                                                           <option>Samedi</option>
+                                                       </select>
+                                                   </div>
+                                                   <div class="mb-4">
+                                                       <label class="form-label">Heures de travail par défaut</label>
+                                                       <div class="row">
+                                                           <div class="col-md-6">
+                                                               <label class="form-label small">Début</label>
+                                                               <input type="time" class="form-control form-control-modern" value="08:00" />
+                                                           </div>
+                                                           <div class="col-md-6">
+                                                               <label class="form-label small">Fin</label>
+                                                               <input type="time" class="form-control form-control-modern" value="17:00" />
+                                                           </div>
+                                                       </div>
+                                                   </div>
+                                                   <h5 class="mb-3">Codes couleur</h5>
+                                                   <div class="color-legend-settings mb-4">
+                                                       <div class="color-item mb-2">
+                                                           <span class="color-box bg-success"></span>
+                                                           <span>Présent</span>
+                                                       </div>
+                                                       <div class="color-item mb-2">
+                                                           <span class="color-box bg-warning"></span>
+                                                           <span>Congé</span>
+                                                       </div>
+                                                       <div class="color-item mb-2">
+                                                           <span class="color-box bg-danger"></span>
+                                                           <span>Absent</span>
+                                                       </div>
+                                                   </div>
+                                                   <div class="form-check form-switch mb-3">
+                                                       <input class="form-check-input" type="checkbox" id="showWeekends">
+                                                       <label class="form-check-label" for="showWeekends">
+                                                           Afficher les week-ends
+                                                       </label>
+                                                   </div>
+                                                   <div class="form-check form-switch mb-4">
+                                                       <input class="form-check-input" type="checkbox" id="autoSave" checked>
+                                                       <label class="form-check-label" for="autoSave">
+                                                           Sauvegarde automatique des modifications
+                                                       </label>
+                                                   </div>
+                                                   <div class="d-flex justify-content-end">
+                                                       <button class="btn btn-primary" @onclick="SavePlanningSettings">
+                                                           <i class="bi bi-check-lg me-2"></i>
+                                                           Enregistrer les paramètres
+                                                       </button>
+                                                   </div>
+                                               </div>;
+
+    // Composant: Export/Import
+    private RenderFragment ExportImportSettings => @<div>
+                                                       <h4 class="mb-4">
+                                                           <i class="bi bi-download me-2"></i>
+                                                           Export et Import de données
+                                                       </h4>
+                                                       <div class="export-section mb-5">
+                                                           <h5 class="mb-3">Exporter les données</h5>
+                                                           <p class="text-muted">Exportez vos données dans différents formats pour sauvegarde ou analyse externe.</p>
+                                                           <div class="row g-3">
+                                                               <div class="col-md-6">
+                                                                   <div class="export-card" @onclick='() => ExportData("planning")'>
+                                                                       <i class="bi bi-calendar3 fs-1 text-primary mb-2"></i>
+                                                                       <h6>Planning complet</h6>
+                                                                       <p class="text-muted small mb-0">Export Excel avec toutes les présences</p>
+                                                                   </div>
+                                                               </div>
+                                                               <div class="col-md-6">
+                                                                   <div class="export-card" @onclick='() => ExportData("conges")'>
+                                                                       <i class="bi bi-calendar-x fs-1 text-warning mb-2"></i>
+                                                                       <h6>Historique des congés</h6>
+                                                                       <p class="text-muted small mb-0">Liste complète des congés</p>
+                                                                   </div>
+                                                               </div>
+                                                               <div class="col-md-6">
+                                                                   <div class="export-card" @onclick='() => ExportData("employes")'>
+                                                                       <i class="bi bi-people fs-1 text-success mb-2"></i>
+                                                                       <h6>Liste des employés</h6>
+                                                                       <p class="text-muted small mb-0">Informations des employés</p>
+                                                                   </div>
+                                                               </div>
+                                                               <div class="col-md-6">
+                                                                   <div class="export-card" @onclick='() => ExportData("backup")'>
+                                                                       <i class="bi bi-database fs-1 text-info mb-2"></i>
+                                                                       <h6>Sauvegarde complète</h6>
+                                                                       <p class="text-muted small mb-0">Toutes les données du système</p>
+                                                                   </div>
+                                                               </div>
+                                                           </div>
+                                                       </div>
+                                                       <hr />
+                                                       <div class="import-section mt-5">
+                                                           <h5 class="mb-3">Importer des données</h5>
+                                                           <p class="text-muted">Importez des données depuis des fichiers Excel ou CSV.</p>
+                                                           <div class="upload-zone">
+                                                               <i class="bi bi-cloud-upload fs-1 text-muted mb-2"></i>
+                                                               <p class="mb-2">Glissez-déposez vos fichiers ici ou</p>
+                                                               <button class="btn btn-outline-primary">
+                                                                   <i class="bi bi-folder-open me-2"></i>
+                                                                   Parcourir les fichiers
+                                                               </button>
+                                                               <p class="text-muted small mt-2">Formats supportés: .xlsx, .xls, .csv</p>
+                                                           </div>
+                                                       </div>
+                                                   </div>;
+
+    // Composant: Sécurité
+    private RenderFragment SecuritySettings => @<div>
+                                                   <h4 class="mb-4">
+                                                       <i class="bi bi-shield-lock me-2"></i>
+                                                       Sécurité du compte
+                                                   </h4>
+                                                   <div class="security-section mb-4">
+                                                       <h5 class="mb-3">Changer le mot de passe</h5>
+                                                       <form @onsubmit:preventDefault="true">
+                                                           <div class="mb-3">
+                                                               <label class="form-label">Mot de passe actuel</label>
+                                                               <input type="password" class="form-control form-control-modern" />
+                                                           </div>
+                                                           <div class="mb-3">
+                                                               <label class="form-label">Nouveau mot de passe</label>
+                                                               <input type="password" class="form-control form-control-modern" />
+                                                               <div class="password-strength mt-2">
+                                                                   <div class="strength-bar">
+                                                                       <div class="strength-fill" style="width: 60%; background: #f59e0b;"></div>
+                                                                   </div>
+                                                                   <small class="text-muted">Force: Moyenne</small>
+                                                               </div>
+                                                           </div>
+                                                           <div class="mb-4">
+                                                               <label class="form-label">Confirmer le nouveau mot de passe</label>
+                                                               <input type="password" class="form-control form-control-modern" />
+                                                           </div>
+                                                           <button class="btn btn-primary" @onclick="ChangePassword">
+                                                               <i class="bi bi-key me-2"></i>
+                                                               Changer le mot de passe
+                                                           </button>
+                                                       </form>
+                                                   </div>
+                                                   <hr class="my-4" />
+                                                   <div class="security-section mb-4">
+                                                       <h5 class="mb-3">Authentification à deux facteurs</h5>
+                                                       <div class="alert alert-info">
+                                                           <i class="bi bi-shield-check me-2"></i>
+                                                           L'authentification à deux facteurs ajoute une couche de sécurité supplémentaire à votre compte.
+                                                       </div>
+                                                       <div class="form-check form-switch mb-3">
+                                                           <input class="form-check-input" type="checkbox" id="twoFactor">
+                                                           <label class="form-check-label" for="twoFactor">
+                                                               Activer l'authentification à deux facteurs
+                                                           </label>
+                                                       </div>
+                                                   </div>
+                                                   <hr class="my-4" />
+                                                   <div class="security-section">
+                                                       <h5 class="mb-3">Sessions actives</h5>
+                                                       <div class="session-list">
+                                                           <div class="session-item">
+                                                               <div class="d-flex justify-content-between align-items-center">
+                                                                   <div>
+                                                                       <i class="bi bi-display me-2"></i>
+                                                                       <strong>Windows - Chrome</strong>
+                                                                       <span class="badge bg-success ms-2">Actuelle</span>
+                                                                       <p class="text-muted small mb-0">127.0.0.1 - Il y a 2 heures</p>
+                                                                   </div>
+                                                               </div>
+                                                           </div>
+                                                           <div class="session-item">
+                                                               <div class="d-flex justify-content-between align-items-center">
+                                                                   <div>
+                                                                       <i class="bi bi-phone me-2"></i>
+                                                                       <strong>iPhone - Safari</strong>
+                                                                       <p class="text-muted small mb-0">192.168.1.100 - Il y a 1 jour</p>
+                                                                   </div>
+                                                                   <button class="btn btn-sm btn-outline-danger">Déconnecter</button>
+                                                               </div>
+                                                           </div>
+                                                       </div>
+                                                       <button class="btn btn-outline-danger mt-3">
+                                                           <i class="bi bi-x-circle me-2"></i>
+                                                           Déconnecter toutes les autres sessions
+                                                       </button>
+                                                   </div>
+                                               </div>;
+
+    // Composant: À propos
+    private RenderFragment AboutSection => @<div>
+                                               <h4 class="mb-4">
+                                                   <i class="bi bi-info-circle me-2"></i>
+                                                   À propos de Planning Présence
+                                               </h4>
+                                               <div class="about-content">
+                                                   <div class="text-center mb-4">
+                                                       <i class="bi bi-calendar-check fs-1 text-primary"></i>
+                                                       <h3 class="mt-2">Planning Présence</h3>
+                                                       <p class="text-muted">Version 2.0.0</p>
+                                                   </div>
+                                                   <div class="card bg-light mb-4">
+                                                       <div class="card-body">
+                                                           <h5>Description</h5>
+                                                           <p>Planning Présence est une application de gestion des plannings et des présences des employés.
+                                                               Elle permet de gérer efficacement les congés, les rotations et d'analyser les données de présence
+                                                               pour une meilleure organisation du travail.</p>
+                                                       </div>
+                                                   </div>
+                                                   <div class="row mb-4">
+                                                       <div class="col-md-6">
+                                                           <h6>Fonctionnalités principales</h6>
+                                                           <ul class="list-unstyled">
+                                                               <li><i class="bi bi-check-circle text-success me-2"></i>Gestion du planning</li>
+                                                               <li><i class="bi bi-check-circle text-success me-2"></i>Suivi des congés</li>
+                                                               <li><i class="bi bi-check-circle text-success me-2"></i>Rotation automatique</li>
+                                                               <li><i class="bi bi-check-circle text-success me-2"></i>Rapports détaillés</li>
+                                                               <li><i class="bi bi-check-circle text-success me-2"></i>Export/Import de données</li>
+                                                           </ul>
+                                                       </div>
+                                                       <div class="col-md-6">
+                                                           <h6>Technologies utilisées</h6>
+                                                           <ul class="list-unstyled">
+                                                               <li><i class="bi bi-dot me-2"></i>Blazor Server</li>
+                                                               <li><i class="bi bi-dot me-2"></i>.NET 8.0</li>
+                                                               <li><i class="bi bi-dot me-2"></i>Entity Framework Core</li>
+                                                               <li><i class="bi bi-dot me-2"></i>Bootstrap 5</li>
+                                                               <li><i class="bi bi-dot me-2"></i>Chart.js</li>
+                                                           </ul>
+                                                       </div>
+                                                   </div>
+                                                   <div class="alert alert-info">
+                                                       <i class="bi bi-envelope me-2"></i>
+                                                       Pour toute question ou suggestion, contactez-nous à: support@planningpresence.com
+                                                   </div>
+                                                   <div class="text-center mt-4">
+                                                       <button class="btn btn-primary me-2" @onclick="CheckForUpdates">
+                                                           <i class="bi bi-arrow-clockwise me-2"></i>
+                                                           Vérifier les mises à jour
+                                                       </button>
+                                                       <button class="btn btn-outline-primary" @onclick="ViewChangelog">
+                                                           <i class="bi bi-journal-text me-2"></i>
+                                                           Voir le changelog
+                                                       </button>
+                                                   </div>
+                                               </div>
+                                           </div>;
+
+    // Variables d'état pour les paramètres d'affichage
+    private string selectedTheme = "light";
+    private string accentColor = "#2563eb";
+    private string fontSize = "medium";
+
+    // Méthodes pour les paramètres d'affichage
+    private void SelectTheme(string theme)
+    {
+        selectedTheme = theme;
+    }
+    private void SelectAccentColor(string color)
+    {
+        accentColor = color;
+    }
+    private void SetFontSize(string size)
+    {
+        fontSize = size;
+    }
+
+    // Méthodes de sauvegarde
+    private void SaveProfile()
+    {
+        ToastService.ShowSuccess("Profil mis à jour avec succès", "Enregistré");
+    }
+    private void SaveNotifications()
+    {
+        ToastService.ShowSuccess("Préférences de notifications enregistrées", "Enregistré");
+    }
+    private void SaveDisplaySettings()
+    {
+        ToastService.ShowSuccess("Paramètres d'affichage appliqués", "Enregistré");
+    }
+    private void SavePlanningSettings()
+    {
+        ToastService.ShowSuccess("Paramètres du planning enregistrés", "Enregistré");
+    }
+    private void ExportData(string type)
+    {
+        ToastService.ShowInfo($"Export des données '{type}' en cours...", "Export");
+    }
+    private void ChangePassword()
+    {
+        ToastService.ShowSuccess("Mot de passe modifié avec succès", "Sécurité");
+    }
+    private void CheckForUpdates()
+    {
+        ToastService.ShowInfo("Vous utilisez la dernière version", "Mise à jour");
+    }
+    private void ViewChangelog()
+    {
+        ToastService.ShowInfo("Changelog: v2.0.0 - Nouvelle interface, amélioration des performances", "Changelog");
+    }
+}
