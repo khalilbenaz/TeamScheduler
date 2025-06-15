@@ -1,0 +1,449 @@
+@page "/teams-new"
+@using TeamScheduler.Application.DTOs
+@using TeamScheduler.Application.Services
+@inject ITeamService TeamService
+@inject ToastService ToastService
+@inject NavigationManager Navigation
+
+<!-- En-tête de page -->
+<div class="page-header">
+    <h1 class="page-title">
+        <i class="bi bi-people-fill"></i>
+        Gestion des Équipes (Nouvelle Architecture)
+    </h1>
+    <p class="page-subtitle">Architecture Clean avec séparation des responsabilités</p>
+</div>
+
+<!-- Actions et statistiques -->
+<div class="row mb-4">
+    <div class="col-md-8">
+        <button class="btn btn-success btn-modern" @onclick="ShowAddTeamModal">
+            <i class="bi bi-plus-circle me-2"></i>Nouvelle équipe
+        </button>
+        <button class="btn btn-outline-primary btn-modern ms-2" @onclick="LoadData">
+            <i class="bi bi-arrow-clockwise me-2"></i>Actualiser
+        </button>
+    </div>
+    <div class="col-md-4 text-end">
+        <span class="badge bg-primary fs-6">@teams.Count équipe(s)</span>
+        <span class="badge bg-success fs-6 ms-2">@teams.Sum(t => t.TotalMembers) membre(s)</span>
+        <span class="badge bg-info fs-6 ms-2">@teams.Sum(t => t.ActiveClientAssignments) affectation(s)</span>
+    </div>
+</div>
+
+<!-- Liste des équipes -->
+@if (isLoading)
+{
+    <div class="text-center my-5">
+        <div class="spinner-border text-primary"></div>
+        <p>Chargement des équipes...</p>
+    </div>
+}
+else if (!teams.Any())
+{
+    <div class="card card-modern">
+        <div class="card-body text-center py-5">
+            <i class="bi bi-people fs-1 text-muted mb-3"></i>
+            <h5 class="text-muted">Aucune équipe créée</h5>
+            <p class="text-muted">Commencez par créer votre première équipe.</p>
+            <button class="btn btn-primary btn-modern mt-3" @onclick="ShowAddTeamModal">
+                <i class="bi bi-plus-circle me-2"></i>Créer une équipe
+            </button>
+        </div>
+    </div>
+}
+else
+{
+    <div class="row">
+        @foreach (var team in teams)
+        {
+            <div class="col-md-6 mb-4">
+                <TeamCard Team="team"
+                         OnViewDetails="ViewTeamDetails"
+                         OnEdit="EditTeam"
+                         OnManageMembers="ManageTeamMembers"
+                         OnDelete="ConfirmDeleteTeam" />
+            </div>
+        }
+    </div>
+}
+
+<!-- Modal de confirmation de suppression -->
+@if (showDeleteModal && teamToDelete != null)
+{
+    <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-trash me-2 text-danger"></i>
+                        Supprimer l'équipe
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="() => showDeleteModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Voulez-vous vraiment supprimer <strong>@teamToDelete.Name</strong> ?<br />
+                    Cette action est <span class="text-danger">irréversible</span>.<br />
+                    Tous les membres seront désaffectés et les affectations seront supprimées.</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="() => showDeleteModal = false">Annuler</button>
+                    <button class="btn btn-danger" @onclick="DeleteTeam" disabled="@isDeleting">
+                        @if (isDeleting)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        Supprimer
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Modal d'édition d'équipe -->
+<TeamEditModal IsVisible="showTeamModal"
+               IsEditMode="isEditMode"
+               TeamModel="teamFormModel"
+               AvailableEmployees="availableEmployees"
+               OnSave="SaveTeam"
+               OnCancel="() => showTeamModal = false"
+               IsLoading="isSaving" />
+
+<!-- Modal de gestion des membres -->
+@if (showMembersModal && managingTeam != null)
+{
+    <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-people me-2"></i>
+                        Gérer les membres - @managingTeam.Name
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="() => showMembersModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>Membres actuels (@managingTeam.Members.Count)</h6>
+                            <div class="list-group" style="max-height: 300px; overflow-y: auto;">
+                                @foreach (var member in managingTeam.Members.OrderBy(m => m.LastName))
+                                {
+                                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <strong>@member.FullName</strong>
+                                            <br />
+                                            <small class="text-muted">@member.Position</small>
+                                            @if (managingTeam.TeamLeaderId == member.Id)
+                                            {
+                                                <span class="badge bg-warning ms-2">Chef</span>
+                                            }
+                                        </div>
+                                        <button class="btn btn-outline-danger btn-sm" 
+                                                @onclick="() => RemoveMemberFromTeam(member.Id)"
+                                                disabled="@(managingTeam.TeamLeaderId == member.Id || isUpdatingMembers)">
+                                            <i class="bi bi-x"></i>
+                                        </button>
+                                    </div>
+                                }
+                                @if (!managingTeam.Members.Any())
+                                {
+                                    <div class="text-center text-muted py-3">
+                                        <i class="bi bi-people fs-2"></i>
+                                        <p>Aucun membre dans cette équipe</p>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Employés disponibles</h6>
+                            <div class="list-group" style="max-height: 300px; overflow-y: auto;">
+                                @foreach (var employee in availableEmployees.Where(e => e.IsActive && e.TeamId == null).OrderBy(e => e.LastName))
+                                {
+                                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <strong>@employee.FullName</strong>
+                                            <br />
+                                            <small class="text-muted">@employee.Position</small>
+                                        </div>
+                                        <button class="btn btn-outline-primary btn-sm" 
+                                                @onclick="() => AddMemberToTeam(employee.Id)"
+                                                disabled="@isUpdatingMembers">
+                                            <i class="bi bi-plus"></i>
+                                        </button>
+                                    </div>
+                                }
+                                @if (!availableEmployees.Where(e => e.IsActive && e.TeamId == null).Any())
+                                {
+                                    <div class="text-center text-muted py-3">
+                                        <i class="bi bi-person-plus fs-2"></i>
+                                        <p>Aucun employé disponible</p>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-primary" @onclick="() => showMembersModal = false">
+                        <i class="bi bi-check-circle me-1"></i>Terminer
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<TeamDto> teams = new();
+    private List<EmployeeDto> availableEmployees = new();
+    private bool isLoading = true;
+    private bool isSaving = false;
+    private bool isDeleting = false;
+    private bool isUpdatingMembers = false;
+
+    // Modals state
+    private bool showTeamModal = false;
+    private bool showDeleteModal = false;
+    private bool showMembersModal = false;
+    private bool isEditMode = false;
+
+    // Form models
+    private TeamFormModel teamFormModel = new();
+    private TeamDto? teamToDelete;
+    private TeamDto? managingTeam;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            isLoading = true;
+            teams = (await TeamService.GetAllTeamsAsync(true)).ToList();
+            availableEmployees = (await TeamService.GetAvailableEmployeesAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur lors du chargement: {ex.Message}", "Erreur");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ShowAddTeamModal()
+    {
+        teamFormModel = new TeamFormModel();
+        isEditMode = false;
+        showTeamModal = true;
+    }
+
+    private void EditTeam(TeamDto team)
+    {
+        teamFormModel = new TeamFormModel
+        {
+            Name = team.Name,
+            Description = team.Description,
+            Code = team.Code,
+            IsActive = team.IsActive,
+            TeamLeaderId = team.TeamLeaderId,
+            MinDailyPresences = team.MinDailyPresences,
+            MaxDailyPresences = team.MaxDailyPresences,
+            MinPersonPresences = team.MinPersonPresences,
+            MaxPersonPresences = team.MaxPersonPresences,
+            MinCriticalDayPresences = team.MinCriticalDayPresences
+        };
+        isEditMode = true;
+        showTeamModal = true;
+    }
+
+    private async Task SaveTeam(TeamFormModel model)
+    {
+        try
+        {
+            isSaving = true;
+
+            if (isEditMode)
+            {
+                var updateDto = new UpdateTeamDto
+                {
+                    Id = teams.First(t => t.Name == model.Name).Id, // Temporary solution
+                    Name = model.Name,
+                    Description = model.Description,
+                    Code = model.Code,
+                    IsActive = model.IsActive,
+                    TeamLeaderId = model.TeamLeaderId,
+                    MinDailyPresences = model.MinDailyPresences,
+                    MaxDailyPresences = model.MaxDailyPresences,
+                    MinPersonPresences = model.MinPersonPresences,
+                    MaxPersonPresences = model.MaxPersonPresences,
+                    MinCriticalDayPresences = model.MinCriticalDayPresences
+                };
+
+                await TeamService.UpdateTeamAsync(updateDto);
+                ToastService.ShowSuccess("Équipe modifiée avec succès", "Modification");
+            }
+            else
+            {
+                var createDto = new CreateTeamDto
+                {
+                    Name = model.Name,
+                    Description = model.Description,
+                    Code = model.Code,
+                    IsActive = model.IsActive,
+                    TeamLeaderId = model.TeamLeaderId,
+                    MinDailyPresences = model.MinDailyPresences,
+                    MaxDailyPresences = model.MaxDailyPresences,
+                    MinPersonPresences = model.MinPersonPresences,
+                    MaxPersonPresences = model.MaxPersonPresences,
+                    MinCriticalDayPresences = model.MinCriticalDayPresences
+                };
+
+                await TeamService.CreateTeamAsync(createDto);
+                ToastService.ShowSuccess("Équipe créée avec succès", "Création");
+            }
+
+            showTeamModal = false;
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur lors de la sauvegarde: {ex.Message}", "Erreur");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void ViewTeamDetails(int teamId)
+    {
+        Navigation.NavigateTo($"/teams/{teamId}");
+    }
+
+    private void ConfirmDeleteTeam(TeamDto team)
+    {
+        teamToDelete = team;
+        showDeleteModal = true;
+    }
+
+    private async Task DeleteTeam()
+    {
+        if (teamToDelete == null) return;
+
+        try
+        {
+            isDeleting = true;
+            await TeamService.DeleteTeamAsync(teamToDelete.Id);
+            ToastService.ShowSuccess($"Équipe {teamToDelete.Name} supprimée avec succès", "Suppression");
+            showDeleteModal = false;
+            teamToDelete = null;
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur lors de la suppression: {ex.Message}", "Erreur");
+        }
+        finally
+        {
+            isDeleting = false;
+        }
+    }
+
+    private void ManageTeamMembers(TeamDto team)
+    {
+        managingTeam = team;
+        showMembersModal = true;
+    }
+
+    private async Task AddMemberToTeam(int employeeId)
+    {
+        if (managingTeam == null) return;
+
+        try
+        {
+            isUpdatingMembers = true;
+            await TeamService.AddMemberToTeamAsync(managingTeam.Id, employeeId);
+            
+            var employee = availableEmployees.First(e => e.Id == employeeId);
+            ToastService.ShowSuccess($"{employee.FullName} ajouté à l'équipe", "Membre ajouté");
+            
+            await LoadData();
+            managingTeam = teams.First(t => t.Id == managingTeam.Id); // Refresh managing team
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur lors de l'ajout: {ex.Message}", "Erreur");
+        }
+        finally
+        {
+            isUpdatingMembers = false;
+        }
+    }
+
+    private async Task RemoveMemberFromTeam(int employeeId)
+    {
+        if (managingTeam == null) return;
+
+        try
+        {
+            isUpdatingMembers = true;
+            await TeamService.RemoveMemberFromTeamAsync(managingTeam.Id, employeeId);
+            
+            var employee = managingTeam.Members.First(m => m.Id == employeeId);
+            ToastService.ShowSuccess($"{employee.FullName} retiré de l'équipe", "Membre retiré");
+            
+            await LoadData();
+            managingTeam = teams.First(t => t.Id == managingTeam.Id); // Refresh managing team
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur lors de la suppression: {ex.Message}", "Erreur");
+        }
+        finally
+        {
+            isUpdatingMembers = false;
+        }
+    }
+}
+
+<style>
+    .card-modern {
+        border: none;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        border-radius: 10px;
+        transition: transform 0.2s ease-in-out;
+    }
+
+    .card-modern:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    }
+
+    .btn-modern {
+        border-radius: 25px;
+        padding: 0.5rem 1.5rem;
+        font-weight: 500;
+    }
+
+    .page-header {
+        margin-bottom: 2rem;
+    }
+
+    .page-title {
+        color: #2c3e50;
+        font-weight: 600;
+    }
+
+    .page-subtitle {
+        color: #7f8c8d;
+        font-size: 1.1rem;
+    }
+</style>

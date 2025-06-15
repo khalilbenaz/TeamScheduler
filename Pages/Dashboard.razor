@@ -160,39 +160,73 @@
                 </div>
             </div>
             <div class="card-body">
+                @if (!string.IsNullOrEmpty(Message))
+                {
+                    <div class="alert @MessageCssClass">@Message</div>
+                }
+
                 <div class="week-planning-grid">
-                    @foreach (var day in GetWeekDays())
+                    @if (weekDays == null || !weekDays.Any())
                     {
-                        <div class="day-column @(day.IsToday ? "today" : "")">
-                            <div class="day-header">
-                                <span class="day-name">@day.Name</span>
-                                <span class="day-date">@day.Date.Day</span>
-                            </div>
-                            <div class="day-content">
-                                @if (day.Employees.Any())
-                                {
-                                    @foreach (var emp in day.Employees.Take(3))
+                        <div class="alert alert-warning mt-3">Aucun planning trouvé pour la semaine sélectionnée.</div>
+                    }
+                    else
+                    {
+                        @for (int i = 0; i < GetWeekDays().Count; i++)
+                        {
+                            var day = GetWeekDays()[i];
+                            <div class="day-column @(day.IsToday ? "today" : "")">
+                                <div class="day-header">
+                                    <span class="day-name">@day.Name</span>
+                                    <span class="day-date">@day.Date.Day</span>
+                                </div>
+                                <div class="day-content">
+                                    @if (day.Employees.Any())
                                     {
-                                        <div class="employee-badge @GetEmployeeBadgeClass(emp.Status)">
-                                            <i class="bi bi-person-circle me-1"></i>
-                                            @emp.Name
+                                        @foreach (var emp in day.Employees.Take(3))
+                                        {
+                                            <div class="employee-badge @GetEmployeeBadgeClass(emp.Status)">
+                                                <i class="bi bi-person-circle me-1"></i>
+                                                @emp.Name
+                                            </div>
+                                        }
+                                        @if (day.Employees.Count > 3)
+                                        {
+                                            <div class="more-employees">
+                                                <button class="btn btn-link p-0" @onclick="() => ToggleShowAll(i)">
+                                                    +@(day.Employees.Count - 3) autres
+                                                </button>
+                                                @if (expandedDayIndex == i)
+                                                {
+                                                    <div class="popover-employees">
+                                                        @if (day.Employees.Skip(3).Any())
+                                                        {
+                                                            @foreach (var emp in day.Employees.Skip(3))
+                                                            {
+                                                                <div class="employee-badge @GetEmployeeBadgeClass(emp.Status)">
+                                                                    <i class="bi bi-person-circle me-1"></i>
+                                                                    @emp.Name
+                                                                </div>
+                                                            }
+                                                        }
+                                                        else
+                                                        {
+                                                            <div class="text-muted">Aucun autre employé à afficher</div>
+                                                        }
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <div class="no-data">
+                                            <i class="bi bi-dash-circle text-muted"></i> Aucun employé assigné
                                         </div>
                                     }
-                                    @if (day.Employees.Count > 3)
-                                    {
-                                        <div class="more-employees">
-                                            +@(day.Employees.Count - 3) autres
-                                        </div>
-                                    }
-                                }
-                                else
-                                {
-                                    <div class="no-data">
-                                        <i class="bi bi-dash-circle text-muted"></i>
-                                    </div>
-                                }
+                                </div>
                             </div>
-                        </div>
+                        }
                     }
                 </div>
             </div>
@@ -281,10 +315,16 @@
     private int upcomingRotations = 0;
     private List<DashboardAlert> alerts = new();
     private List<ActivityItem> recentActivities = new();
+    private List<WeekDay> weekDays = new();
+    private int? expandedDayIndex = null;
+
+    private string? Message;
+    private string MessageCssClass = "alert-info";
 
     protected override async Task OnInitializedAsync()
     {
         await LoadDashboardData();
+        await LoadWeekPlanning();
     }
 
     private async Task LoadDashboardData()
@@ -323,6 +363,67 @@
         catch (Exception ex)
         {
             ToastService.ShowError($"Erreur lors du chargement: {ex.Message}", "Erreur");
+        }
+    }
+
+    private async Task LoadWeekPlanning()
+    {
+        try
+        {
+            weekDays.Clear();
+            var monday = GetMondayOfWeek(DateTime.Today);
+            for (int i = 0; i < 5; i++)
+            {
+                var date = monday.AddDays(i);
+                var day = new WeekDay
+                {
+                    Date = date,
+                    Name = date.ToString("ddd", new System.Globalization.CultureInfo("fr-FR")),
+                    IsToday = date.Date == DateTime.Today.Date,
+                    Employees = new List<EmployeeStatus>()
+                };
+
+                // Récupérer tous les plannings pour ce jour
+                var plannings = await DbContext.PlanningsEquipeClient
+                    .Where(p => p.DatePlanning.Date == date.Date)
+                    .ToListAsync();
+                var employeeIds = new HashSet<int>();
+                foreach (var planning in plannings)
+                {
+                    if (!string.IsNullOrEmpty(planning.EmployesAssignes))
+                    {
+                        try
+                        {
+                            var ids = System.Text.Json.JsonSerializer.Deserialize<List<int>>(planning.EmployesAssignes);
+                            if (ids != null)
+                                foreach (var id in ids)
+                                    employeeIds.Add(id);
+                        }
+                        catch { }
+                    }
+                }
+                if (employeeIds.Count > 0)
+                {
+                    var employees = await DbContext.Employes
+                        .Where(e => employeeIds.Contains(e.Id))
+                        .ToListAsync();
+                    foreach (var emp in employees)
+                    {
+                        day.Employees.Add(new EmployeeStatus
+                        {
+                            Id = emp.Id,
+                            Name = $"{emp.Prenom} {emp.Nom}",
+                            Status = "present" // TODO: gérer le statut réel (présent/congé)
+                        });
+                    }
+                }
+                weekDays.Add(day);
+            }
+        }
+        catch (Exception ex)
+        {
+            Message = $"Erreur lors de la génération du planning : {ex.Message}";
+            MessageCssClass = "alert-danger";
         }
     }
 
@@ -428,43 +529,14 @@
             DayOfWeek.Monday);
     }
 
-    private List<WeekDay> GetWeekDays()
+    private List<WeekDay> GetWeekDays() => weekDays;
+
+    private void ToggleShowAll(int dayIndex)
     {
-        var days = new List<WeekDay>();
-        var monday = GetMondayOfWeek(DateTime.Today);
-
-        for (int i = 0; i < 5; i++)
-        {
-            var date = monday.AddDays(i);
-            var day = new WeekDay
-            {
-                Date = date,
-                Name = date.ToString("ddd", new System.Globalization.CultureInfo("fr-FR")),
-                IsToday = date.Date == DateTime.Today.Date,
-                Employees = new List<EmployeeStatus>()
-            };
-
-            // Simuler des employés pour chaque jour
-            var employeeCount = Random.Shared.Next(8, 12);
-            for (int j = 0; j < employeeCount; j++)
-            {
-                day.Employees.Add(new EmployeeStatus
-                {
-                    Name = $"Employé {j + 1}",
-                    Status = Random.Shared.Next(10) > 2 ? "present" : "conge"
-                });
-            }
-
-            days.Add(day);
-        }
-
-        return days;
-    }
-
-    private DateTime GetMondayOfWeek(DateTime date)
-    {
-        int daysFromMonday = ((int)date.DayOfWeek - 1 + 7) % 7;
-        return date.AddDays(-daysFromMonday);
+        if (expandedDayIndex == dayIndex)
+            expandedDayIndex = null;
+        else
+            expandedDayIndex = dayIndex;
     }
 
     private string GetAlertClass(AlertType type)
@@ -594,8 +666,15 @@
 
     private class EmployeeStatus
     {
+        public int Id { get; set; }
         public string Name { get; set; } = "";
         public string Status { get; set; } = "";
+    }
+
+    private DateTime GetMondayOfWeek(DateTime date)
+    {
+        int daysFromMonday = ((int)date.DayOfWeek - 1 + 7) % 7;
+        return date.AddDays(-daysFromMonday);
     }
 }
 
@@ -796,5 +875,20 @@
         justify-content: center;
         height: 100%;
         color: #cbd5e1;
+    }
+
+    .popover-employees {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 0.5rem;
+        margin-top: 0.25rem;
+        z-index: 10;
+        width: calc(100% - 1rem);
+        display: flex;
+        flex-direction: column;
     }
 </style>

@@ -1,8 +1,10 @@
 @page "/settings"
 @using PlanningPresenceBlazor.Services
 @using PlanningPresenceBlazor.Data
+@using Microsoft.EntityFrameworkCore
 @inject ToastService ToastService
 @inject NavigationManager Navigation
+@inject PlanningDbContext DbContext
 
 <!-- En-tête de page -->
 <div class="page-header">
@@ -63,29 +65,33 @@
     <div class="col-md-9">
         <div class="card card-modern">
             <div class="card-body">
-                @switch (activeTab)
+                @if (activeTab == "profile")
                 {
-                    case "profile":
-                        <ProfileSettings />
-                        break;
-                    case "notifications":
-                        <NotificationSettings />
-                        break;
-                    case "display":
-                        <DisplaySettings />
-                        break;
-                    case "planning":
-                        <PlanningSettings />
-                        break;
-                    case "export":
-                        <ExportImportSettings />
-                        break;
-                    case "security":
-                        <SecuritySettings />
-                        break;
-                    case "about":
-                        <AboutSection />
-                        break;
+                    @ProfileSettings
+                }
+                else if (activeTab == "notifications")
+                {
+                    @NotificationSettings
+                }
+                else if (activeTab == "display")
+                {
+                    @DisplaySettings
+                }
+                else if (activeTab == "planning")
+                {
+                    @PlanningSettings
+                }
+                else if (activeTab == "export")
+                {
+                    @ExportImportSettings
+                }
+                else if (activeTab == "security")
+                {
+                    @SecuritySettings
+                }
+                else if (activeTab == "about")
+                {
+                    @AboutSection
                 }
             </div>
         </div>
@@ -111,18 +117,18 @@
                                                       <div class="row mb-3">
                                                           <div class="col-md-6">
                                                               <label class="form-label">Nom complet</label>
-                                                              <input type="text" class="form-control form-control-modern" value="Administrateur" />
+                                                              <input type="text" class="form-control form-control-modern" @bind="profileName" />
                                                           </div>
                                                           <div class="col-md-6">
                                                               <label class="form-label">Email</label>
-                                                              <input type="email" class="form-control form-control-modern" value="admin@planningpresence.com" />
+                                                              <input type="email" class="form-control form-control-modern" @bind="profileEmail" />
                                                           </div>
                                                       </div>
 
                                                       <div class="row mb-3">
                                                           <div class="col-md-6">
                                                               <label class="form-label">Rôle</label>
-                                                              <select class="form-select form-control-modern">
+                                                              <select class="form-select form-control-modern" @bind="profileRole">
                                                                   <option>Administrateur</option>
                                                                   <option>Manager</option>
                                                                   <option>Utilisateur</option>
@@ -130,7 +136,7 @@
                                                           </div>
                                                           <div class="col-md-6">
                                                               <label class="form-label">Département</label>
-                                                              <input type="text" class="form-control form-control-modern" value="Resources Humaines" />
+                                                              <input type="text" class="form-control form-control-modern" @bind="profileDepartement" />
                                                           </div>
                                                       </div>
 
@@ -167,35 +173,35 @@
                                                        </h4>
                                                        <div class="notification-settings">
                                                            <div class="form-check form-switch mb-3">
-                                                               <input class="form-check-input" type="checkbox" id="emailNotif" checked>
+                                                               <input class="form-check-input" type="checkbox" id="emailNotif" @bind="notifEmail">
                                                                <label class="form-check-label" for="emailNotif">
                                                                    <strong>Notifications par email</strong>
                                                                    <p class="text-muted small mb-0">Recevoir des notifications importantes par email</p>
                                                                </label>
                                                            </div>
                                                            <div class="form-check form-switch mb-3">
-                                                               <input class="form-check-input" type="checkbox" id="planningNotif" checked>
+                                                               <input class="form-check-input" type="checkbox" id="planningNotif" @bind="notifPlanning">
                                                                <label class="form-check-label" for="planningNotif">
                                                                    <strong>Modifications du planning</strong>
                                                                    <p class="text-muted small mb-0">Être notifié lors de changements dans le planning</p>
                                                                </label>
                                                            </div>
                                                            <div class="form-check form-switch mb-3">
-                                                               <input class="form-check-input" type="checkbox" id="congeNotif" checked>
+                                                               <input class="form-check-input" type="checkbox" id="congeNotif" @bind="notifConge">
                                                                <label class="form-check-label" for="congeNotif">
                                                                    <strong>Demandes de congé</strong>
                                                                    <p class="text-muted small mb-0">Notifications pour les nouvelles demandes et validations</p>
                                                                </label>
                                                            </div>
                                                            <div class="form-check form-switch mb-3">
-                                                               <input class="form-check-input" type="checkbox" id="reportNotif">
+                                                               <input class="form-check-input" type="checkbox" id="reportNotif" @bind="notifReport">
                                                                <label class="form-check-label" for="reportNotif">
                                                                    <strong>Rapports automatiques</strong>
                                                                    <p class="text-muted small mb-0">Recevoir des rapports périodiques automatiquement</p>
                                                                </label>
                                                            </div>
                                                            <div class="form-check form-switch mb-3">
-                                                               <input class="form-check-input" type="checkbox" id="reminderNotif" checked>
+                                                               <input class="form-check-input" type="checkbox" id="reminderNotif" @bind="notifReminder">
                                                                <label class="form-check-label" for="reminderNotif">
                                                                    <strong>Rappels</strong>
                                                                    <p class="text-muted small mb-0">Rappels pour les tâches importantes</p>
@@ -208,19 +214,19 @@
                                                        <div class="row mb-4">
                                                            <div class="col-md-6">
                                                                <label class="form-label">Résumé quotidien</label>
-                                                               <select class="form-select form-control-modern">
+                                                               <select class="form-select form-control-modern" @bind="notifDaily">
                                                                    <option>Désactivé</option>
-                                                                   <option selected>8h00</option>
+                                                                   <option>8h00</option>
                                                                    <option>9h00</option>
                                                                    <option>10h00</option>
                                                                </select>
                                                            </div>
                                                            <div class="col-md-6">
                                                                <label class="form-label">Rapport hebdomadaire</label>
-                                                               <select class="form-select form-control-modern">
+                                                               <select class="form-select form-control-modern" @bind="notifWeekly">
                                                                    <option>Désactivé</option>
                                                                    <option>Lundi</option>
-                                                                   <option selected>Vendredi</option>
+                                                                   <option>Vendredi</option>
                                                                </select>
                                                            </div>
                                                        </div>
@@ -597,6 +603,67 @@
     private string accentColor = "#2563eb";
     private string fontSize = "medium";
 
+    // Variables d'état pour le profil
+    private string profileName = "Administrateur";
+    private string profileEmail = "admin@planningpresence.com";
+    private string profileRole = "Administrateur";
+    private string profileDepartement = "Ressources Humaines";
+
+    // Variables d'état pour les notifications
+    private bool notifEmail = true;
+    private bool notifPlanning = true;
+    private bool notifConge = true;
+    private bool notifReport = false;
+    private bool notifReminder = true;
+    private string notifDaily = "8h00";
+    private string notifWeekly = "Vendredi";
+
+    // Variables pour les paramètres utilisateur
+    private int currentEmployeId = 1; // À remplacer par l’ID réel de l’utilisateur connecté
+    private PlanningPresenceBlazor.Core.Entities.UserSettings? userSettings;
+
+    protected override async Task OnInitializedAsync()
+    {
+        userSettings = await DbContext.UserSettings.FirstOrDefaultAsync(u => u.EmployeId == currentEmployeId);
+        if (userSettings != null)
+        {
+            selectedTheme = userSettings.Theme ?? "light";
+            accentColor = userSettings.AccentColor ?? "#2563eb";
+            fontSize = userSettings.FontSize ?? "medium";
+            notifEmail = userSettings.NotifEmail;
+            notifPlanning = userSettings.NotifPlanning;
+            notifConge = userSettings.NotifConge;
+            notifReport = userSettings.NotifReport;
+            notifReminder = userSettings.NotifReminder;
+            notifDaily = userSettings.NotifDaily ?? "8h00";
+            notifWeekly = userSettings.NotifWeekly ?? "Vendredi";
+        }
+    }
+
+    private async Task SaveAllSettingsAsync()
+    {
+        if (userSettings == null)
+        {
+            userSettings = new PlanningPresenceBlazor.Core.Entities.UserSettings
+            {
+                EmployeId = currentEmployeId
+            };
+            DbContext.UserSettings.Add(userSettings);
+        }
+        userSettings.Theme = selectedTheme;
+        userSettings.AccentColor = accentColor;
+        userSettings.FontSize = fontSize;
+        userSettings.NotifEmail = notifEmail;
+        userSettings.NotifPlanning = notifPlanning;
+        userSettings.NotifConge = notifConge;
+        userSettings.NotifReport = notifReport;
+        userSettings.NotifReminder = notifReminder;
+        userSettings.NotifDaily = notifDaily;
+        userSettings.NotifWeekly = notifWeekly;
+        await DbContext.SaveChangesAsync();
+        ToastService.ShowSuccess("Préférences enregistrées dans la base de données", "Succès");
+    }
+
     // Méthodes pour les paramètres d'affichage
     private void SelectTheme(string theme)
     {
@@ -645,3 +712,86 @@
         ToastService.ShowInfo("Changelog: v2.0.0 - Nouvelle interface, amélioration des performances", "Changelog");
     }
 }
+
+<style>
+/* Amélioration du design de la page Settings */
+.settings-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.settings-nav-item {
+    background: none;
+    border: none;
+    text-align: left;
+    padding: 0.75rem 1rem;
+    font-size: 1.1rem;
+    color: #2563eb;
+    border-radius: 0.375rem;
+    transition: background 0.2s, color 0.2s;
+}
+.settings-nav-item.active, .settings-nav-item:hover {
+    background: #f1f5f9;
+    color: #1e293b;
+    font-weight: 600;
+}
+.card-modern {
+    border-radius: 1rem;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+    border: none;
+}
+.page-header {
+    margin-bottom: 2rem;
+}
+.page-title {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #2563eb;
+}
+.page-subtitle {
+    color: #64748b;
+    font-size: 1.1rem;
+}
+.form-control-modern, .form-select.form-control-modern {
+    border-radius: 0.5rem;
+    border: 1px solid #e5e7eb;
+    background: #f8fafc;
+    font-size: 1rem;
+}
+.btn-primary {
+    background: #2563eb;
+    border: none;
+}
+.btn-outline-primary {
+    border-color: #2563eb;
+    color: #2563eb;
+}
+.btn-outline-primary:hover {
+    background: #2563eb;
+    color: #fff;
+}
+.avatar-upload {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: #e0e7ef;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+@@media (max-width: 991px) {
+    .col-md-3, .col-md-9 {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+    .settings-nav {
+        flex-direction: row;
+        overflow-x: auto;
+        gap: 0.25rem;
+    }
+    .settings-nav-item {
+        min-width: 120px;
+        text-align: center;
+    }
+}
+</style>

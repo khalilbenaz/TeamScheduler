@@ -1,0 +1,380 @@
+@page "/teams/{TeamId:int}"
+@using TeamScheduler.Application.DTOs
+@using TeamScheduler.Application.Services
+@inject ITeamService TeamService
+@inject ToastService ToastService
+@inject NavigationManager Navigation
+
+<!-- En-tête de page -->
+<div class="page-header">
+    <nav>
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="/teams">Équipes</a></li>
+            <li class="breadcrumb-item active">@(team?.Name ?? "Détails")</li>
+        </ol>
+    </nav>
+    <div class="d-flex justify-content-between align-items-center">
+        <h1 class="page-title">
+            <i class="bi bi-people-fill"></i>
+            @(team?.Name ?? "Chargement...")
+        </h1>
+        @if (team != null)
+        {
+            <div class="btn-group">
+                <button class="btn btn-primary" @onclick="EditTeam">
+                    <i class="bi bi-pencil me-1"></i>Modifier
+                </button>
+                <button class="btn btn-success" @onclick="ManageMembers">
+                    <i class="bi bi-people me-1"></i>Gérer les membres
+                </button>
+                <button class="btn btn-outline-danger" @onclick="ConfirmDelete">
+                    <i class="bi bi-trash me-1"></i>Supprimer
+                </button>
+            </div>
+        }
+    </div>
+</div>
+
+@if (isLoading)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Chargement...</span>
+        </div>
+        <p class="mt-3 text-muted">Chargement des détails de l'équipe...</p>
+    </div>
+}
+else if (team == null)
+{
+    <div class="alert alert-warning" role="alert">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        Équipe introuvable ou supprimée.
+        <a href="/teams" class="alert-link">Retour à la liste des équipes</a>
+    </div>
+}
+else
+{
+    <!-- Informations principales -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-info-circle me-2"></i>Informations générales
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Nom de l'équipe</label>
+                            <p class="mb-2">@team.Name</p>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Code</label>
+                            <p class="mb-2">@(team.Code ?? "Non défini")</p>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Chef d'équipe</label>
+                            <p class="mb-2">
+                                @if (!string.IsNullOrEmpty(team.TeamLeaderName))
+                                {
+                                    <i class="bi bi-star-fill text-warning me-1"></i>@team.TeamLeaderName
+                                }
+                                else
+                                {
+                                    <span class="text-muted">Aucun chef désigné</span>
+                                }
+                            </p>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Statut</label>
+                            <p class="mb-2">
+                                <span class="badge @(team.IsActive ? "bg-success" : "bg-secondary")">
+                                    @(team.IsActive ? "Active" : "Inactive")
+                                </span>
+                            </p>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-bold">Description</label>
+                            <p class="mb-2">@(team.Description ?? "Aucune description")</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Statistiques -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-graph-up me-2"></i>Statistiques
+                    </h5>
+                </div>
+                <div class="card-body">
+                    @if (statistics != null)
+                    {
+                        <div class="row g-3 text-center">
+                            <div class="col-6">
+                                <div class="stat-card">
+                                    <div class="stat-value text-primary">@statistics.TotalMembers</div>
+                                    <div class="stat-label">Membres totaux</div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="stat-card">
+                                    <div class="stat-value text-success">@statistics.ActiveMembers</div>
+                                    <div class="stat-label">Actifs</div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="stat-card">
+                                    <div class="stat-value text-info">@statistics.ActiveClients</div>
+                                    <div class="stat-label">Clients</div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="stat-card">
+                                    <div class="stat-value text-warning">@statistics.ActiveProjects</div>
+                                    <div class="stat-label">Projets</div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="text-center text-muted">
+                            <div class="spinner-border spinner-border-sm" role="status"></div>
+                            <p class="small mt-2">Chargement des statistiques...</p>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Configuration des présences -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-gear me-2"></i>Configuration des présences
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <div class="config-stat">
+                                <label class="form-label fw-bold">Présences par jour</label>
+                                <p class="mb-0">@team.MinDailyPresences - @team.MaxDailyPresences personnes</p>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="config-stat">
+                                <label class="form-label fw-bold">Présences par semaine</label>
+                                <p class="mb-0">@team.MinPersonPresences - @team.MaxPersonPresences jours/personne</p>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="config-stat">
+                                <label class="form-label fw-bold">Jours critiques</label>
+                                <p class="mb-0">Minimum @team.MinCriticalDayPresences personnes</p>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="config-stat">
+                                <label class="form-label fw-bold">Créée le</label>
+                                <p class="mb-0">@team.CreatedAt.ToString("dd/MM/yyyy")</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Membres de l'équipe -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-people me-2"></i>Membres de l'équipe (@team.Members.Count)
+                    </h5>
+                    <button class="btn btn-sm btn-outline-primary" @onclick="ManageMembers">
+                        <i class="bi bi-plus-circle me-1"></i>Gérer
+                    </button>
+                </div>
+                <div class="card-body">
+                    @if (team.Members.Any())
+                    {
+                        <div class="row">
+                            @foreach (var member in team.Members.OrderBy(m => m.LastName))
+                            {
+                                <div class="col-md-6 col-lg-4 mb-3">
+                                    <div class="member-card">
+                                        <div class="d-flex align-items-center">
+                                            <div class="member-avatar me-3">
+                                                <i class="bi bi-person-circle fs-2 text-muted"></i>
+                                            </div>
+                                            <div class="flex-grow-1">
+                                                <h6 class="mb-1">
+                                                    @member.FullName
+                                                    @if (team.TeamLeaderId == member.Id)
+                                                    {
+                                                        <span class="badge bg-warning ms-1">Chef</span>
+                                                    }
+                                                </h6>
+                                                <p class="text-muted small mb-1">@member.Position</p>
+                                                <p class="text-muted small mb-0">
+                                                    <i class="bi bi-envelope me-1"></i>@member.Email
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <span class="badge @(member.IsActive ? "bg-success" : "bg-secondary")">
+                                                    @(member.IsActive ? "Actif" : "Inactif")
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="text-center py-4">
+                            <i class="bi bi-person-plus fs-1 text-muted"></i>
+                            <p class="text-muted mt-2">Aucun membre dans cette équipe</p>
+                            <button class="btn btn-primary" @onclick="ManageMembers">
+                                <i class="bi bi-plus-circle me-1"></i>Ajouter des membres
+                            </button>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .stat-card {
+        padding: 1rem;
+        text-align: center;
+        border: 1px solid #e9ecef;
+        border-radius: 0.375rem;
+        background-color: #f8f9fa;
+    }
+
+    .stat-value {
+        font-size: 1.5rem;
+        font-weight: bold;
+        margin-bottom: 0.25rem;
+    }
+
+    .stat-label {
+        font-size: 0.875rem;
+        color: #6c757d;
+    }
+
+    .config-stat {
+        padding: 1rem;
+        background-color: #f8f9fa;
+        border-radius: 0.375rem;
+        border: 1px solid #e9ecef;
+    }
+
+    .member-card {
+        padding: 1rem;
+        border: 1px solid #e9ecef;
+        border-radius: 0.375rem;
+        background-color: white;
+        transition: box-shadow 0.15s ease-in-out;
+    }
+
+    .member-card:hover {
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .page-header {
+        margin-bottom: 2rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid #e9ecef;
+    }
+
+    .page-title {
+        margin-bottom: 0;
+        color: #495057;
+    }
+</style>
+
+@code {
+    [Parameter] public int TeamId { get; set; }
+    
+    private TeamDto? team;
+    private TeamScheduler.Application.DTOs.TeamStatisticsDto? statistics;
+    private bool isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadTeamDetails();
+        await LoadStatistics();
+    }
+
+    private async Task LoadTeamDetails()
+    {
+        try
+        {
+            isLoading = true;
+            team = await TeamService.GetTeamByIdAsync(TeamId, includeDetails: true);
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur lors du chargement de l'équipe: {ex.Message}", "Erreur");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadStatistics()
+    {
+        try
+        {
+            if (team != null)
+            {
+                var result = await TeamService.GetTeamStatisticsAsync(TeamId);
+                statistics = new TeamScheduler.Application.DTOs.TeamStatisticsDto {
+                    TotalMembers = result.TotalMembers,
+                    ActiveMembers = result.ActiveMembers,
+                    ActiveClients = result.ActiveClients,
+                    ActiveProjects = result.ActiveProjects,
+                    AveragePresenceRate = result.AveragePresenceRate,
+                    LastActivity = result.LastActivity
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur lors du chargement des statistiques: {ex.Message}", "Erreur");
+        }
+    }
+
+    private void EditTeam()
+    {
+        Navigation.NavigateTo($"/teams?edit={TeamId}");
+    }
+
+    private void ManageMembers()
+    {
+        Navigation.NavigateTo($"/teams?manage={TeamId}");
+    }
+
+    private void ConfirmDelete()
+    {
+        // TODO: Implémenter la suppression avec confirmation
+        ToastService.ShowInfo("Fonction de suppression en développement", "À venir");
+    }
+}

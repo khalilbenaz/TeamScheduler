@@ -1,0 +1,16 @@
+@inherits LayoutComponentBase
+<div class="modal-backdrop" @onclick="OnCancel">
+    <div class="modal-content" @onclick:stopPropagation="true">
+        <h4>@Title</h4>
+        <p>@Message</p>
+        <button @onclick="OnConfirm">Confirmer</button>
+        <button @onclick="OnCancel">Annuler</button>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; }
+    [Parameter] public string Message { get; set; }
+    [Parameter] public EventCallback OnConfirm { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+}

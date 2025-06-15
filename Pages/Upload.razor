@@ -398,7 +398,10 @@
                     })
                 .ToList();
 
-            var success = await PlanningService.SaveCongesToDbAsync(validConges);
+            // Calculer la semaine affichée pour l’import (aligné sur Planning.razor)
+            var weekStart = DateTime.Today.AddDays(-(int)DateTime.Today.DayOfWeek + 1); // Lundi de la semaine courante
+            var weekEnd = weekStart.AddDays(6);
+            var success = await PlanningService.SaveCongesToDbAsync(validConges, weekStart, weekEnd);
 
             if (success)
             {

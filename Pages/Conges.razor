@@ -217,6 +217,15 @@
                                         <button class="btn btn-outline-danger" @onclick="() => DeleteConge(conge)" title="Supprimer">
                                             <i class="bi bi-trash"></i>
                                         </button>
+                                        @if (CanValidate(conge))
+                                        {
+                                            <button class="btn btn-success" @onclick="() => ShowValidationModal(conge, true)" title="Valider">
+                                                <i class="bi bi-check-circle"></i>
+                                            </button>
+                                            <button class="btn btn-warning" @onclick="() => ShowValidationModal(conge, false)" title="Refuser">
+                                                <i class="bi bi-x-circle"></i>
+                                            </button>
+                                        }
                                     </div>
                                 </td>
                             </tr>
@@ -308,6 +317,36 @@
     </div>
 }
 
+<!-- Modal de validation/refus -->
+@if (showValidationModal && congeToValidate != null)
+{
+    <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi @(isValidation ? "bi-check-circle text-success" : "bi-x-circle text-danger") me-2"></i>
+                        @(isValidation ? "Valider le congé" : "Refuser le congé")
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CancelValidation"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Employé : <strong>@congeToValidate.Nom</strong></p>
+                    <p>Période : <strong>@congeToValidate.DateDebut.ToString("dd/MM/yyyy")</strong> au <strong>@congeToValidate.DateFin.ToString("dd/MM/yyyy")</strong></p>
+                    <div class="mb-3">
+                        <label class="form-label">Commentaire (optionnel)</label>
+                        <textarea class="form-control" @bind="validationComment" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CancelValidation">Annuler</button>
+                    <button class="btn btn-primary" @onclick="ConfirmValidationAsync">Confirmer</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private List<Conge> conges = new();
     private List<Employe> employees = new();
@@ -319,6 +358,13 @@
     private bool showModal = false;
     private bool isSaving = false;
     private Conge editingConge = new();
+
+    private string currentUserRole = "Administrateur"; // À remplacer par le rôle réel de l'utilisateur connecté
+    private int currentEmployeId = 1; // À remplacer par l'ID réel de l'utilisateur connecté
+    private bool showValidationModal = false;
+    private Conge? congeToValidate = null;
+    private bool isValidation = true;
+    private string validationComment = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
@@ -481,5 +527,42 @@
             TypeConge.Formation => "bg-success",
             _ => "bg-primary"
         };
+    }
+
+    private bool CanValidate(Conge conge)
+    {
+        if (conge.Status != StatusConge.EnAttente) return false;
+        if (currentUserRole == "Administrateur" || currentUserRole == "Manager" || currentUserRole == "RH")
+            return true;
+        // TODO: Vérifier si currentEmployeId est supérieur du demandeur
+        return false;
+    }
+
+    private void ShowValidationModal(Conge conge, bool validate)
+    {
+        congeToValidate = conge;
+        isValidation = validate;
+        validationComment = string.Empty;
+        showValidationModal = true;
+    }
+
+    private async Task ConfirmValidationAsync()
+    {
+        if (congeToValidate == null) return;
+        congeToValidate.Status = isValidation ? StatusConge.Approuve : StatusConge.Refuse;
+        congeToValidate.DateValidation = DateTime.Now;
+        congeToValidate.ValidePar = $"{currentUserRole} (ID:{currentEmployeId})";
+        congeToValidate.CommentaireValidation = validationComment;
+        await DbContext.SaveChangesAsync();
+        ToastService.ShowSuccess(isValidation ? "Congé validé" : "Congé refusé", "Validation");
+        showValidationModal = false;
+        await LoadConges();
+    }
+
+    private void CancelValidation()
+    {
+        showValidationModal = false;
+        congeToValidate = null;
+        validationComment = string.Empty;
     }
 }

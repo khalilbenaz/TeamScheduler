@@ -16,9 +16,12 @@ namespace PlanningPresenceBlazor.Data
         public DbSet<Client> Clients { get; set; }
         public DbSet<Conge> Conges { get; set; }
         public DbSet<Competence> Competences { get; set; }
+        public DbSet<Presence> Presences { get; set; }
+        public DbSet<Projet> Projets { get; set; }
         
         // Tables de relation
         public DbSet<AffectationEquipeClient> AffectationsEquipeClient { get; set; }
+        public DbSet<AffectationEquipeProjet> AffectationsEquipeProjet { get; set; }
         public DbSet<PlanningEquipeClient> PlanningsEquipeClient { get; set; }
         public DbSet<EmployeCompetence> EmployeCompetences { get; set; }
         public DbSet<ClientCompetenceRequise> ClientCompetencesRequises { get; set; }
@@ -26,6 +29,7 @@ namespace PlanningPresenceBlazor.Data
         
         // Configuration
         public DbSet<ConfigurationPlanning> ConfigurationsPlanning { get; set; }
+        public DbSet<PlanningPresenceBlazor.Core.Entities.UserSettings> UserSettings { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -137,6 +141,43 @@ namespace PlanningPresenceBlazor.Data
                 entity.HasIndex(a => a.EstActive);
             });
 
+            // Configuration AffectationEquipeProjet
+            modelBuilder.Entity<AffectationEquipeProjet>(entity =>
+            {
+                entity.HasKey(a => a.Id);
+                entity.Property(a => a.Notes).HasMaxLength(500);
+                
+                entity.HasOne(a => a.Equipe)
+                    .WithMany(e => e.AffectationsProjets)
+                    .HasForeignKey(a => a.EquipeId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                    
+                entity.HasOne(a => a.Projet)
+                    .WithMany(p => p.Affectations)
+                    .HasForeignKey(a => a.ProjetId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                    
+                entity.HasIndex(a => new { a.EquipeId, a.ProjetId })
+                    .IsUnique()
+                    .HasDatabaseName("IX_AffectationEquipeProjet_EquipeProjet");
+            });
+
+            // Configuration Projet
+            modelBuilder.Entity<Projet>(entity =>
+            {
+                entity.HasKey(p => p.Id);
+                entity.Property(p => p.Nom).IsRequired().HasMaxLength(200);
+                entity.Property(p => p.Description).HasMaxLength(1000);
+                
+                entity.HasOne(p => p.Client)
+                    .WithMany()
+                    .HasForeignKey(p => p.ClientId)
+                    .OnDelete(DeleteBehavior.Restrict);
+                    
+                entity.HasIndex(p => p.Nom);
+                entity.HasIndex(p => p.ClientId);
+            });
+
             // Configuration PlanningEquipeClient
             modelBuilder.Entity<PlanningEquipeClient>(entity =>
             {
@@ -224,6 +265,27 @@ namespace PlanningPresenceBlazor.Data
                 
                 entity.HasIndex(c => c.EstActive);
             });
+
+            // Configuration Employee (rôle)
+            modelBuilder.Entity<TeamScheduler.Core.Entities.Employee>(entity =>
+            {
+                entity.Property(e => e.Role).IsRequired().HasMaxLength(30);
+            });
+
+            // Relation explicite Employee <-> Team
+            modelBuilder.Entity<TeamScheduler.Core.Entities.Employee>()
+                .HasOne(e => e.Team)
+                .WithMany(t => t.Members)
+                .HasForeignKey(e => e.TeamId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            // Clé composite pour ClientRequiredSkill
+            modelBuilder.Entity<TeamScheduler.Core.Entities.ClientRequiredSkill>()
+                .HasKey(crs => new { crs.ClientId, crs.SkillId });
+
+            // Clé composite pour EmployeeSkill
+            modelBuilder.Entity<TeamScheduler.Core.Entities.EmployeeSkill>()
+                .HasKey(es => new { es.EmployeeId, es.SkillId });
 
             // Seed data - Configuration par défaut
             modelBuilder.Entity<ConfigurationPlanning>().HasData(

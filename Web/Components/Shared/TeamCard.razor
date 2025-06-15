@@ -1,0 +1,118 @@
+@using TeamScheduler.Application.DTOs
+
+<div class="card card-modern @(!Team.IsActive ? "opacity-75" : "")">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">
+            <i class="bi bi-people me-2 text-primary"></i>
+            @Team.Name
+            @if (!string.IsNullOrEmpty(Team.Code))
+            {
+                <span class="badge bg-secondary ms-2">@Team.Code</span>
+            }
+        </h5>
+        <div>
+            @if (Team.IsActive)
+            {
+                <span class="badge bg-success">Active</span>
+            }
+            else
+            {
+                <span class="badge bg-danger">Inactive</span>
+            }
+        </div>
+    </div>
+
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(Team.Description))
+        {
+            <p class="text-muted small mb-3">@Team.Description</p>
+        }
+
+        <!-- Team leader -->
+        @if (!string.IsNullOrEmpty(Team.TeamLeaderName))
+        {
+            <div class="mb-3">
+                <strong><i class="bi bi-person-badge me-1"></i>Chef d'équipe:</strong>
+                <span class="text-primary">@Team.TeamLeaderName</span>
+            </div>
+        }
+
+        <!-- Statistics -->
+        <div class="row text-center mb-3">
+            <div class="col-4">
+                <div class="stat-mini">
+                    <div class="stat-value">@Team.TotalMembers</div>
+                    <div class="stat-label">Membres</div>
+                </div>
+            </div>
+            <div class="col-4">
+                <div class="stat-mini">
+                    <div class="stat-value">@Team.ActiveClientAssignments</div>
+                    <div class="stat-label">Clients</div>
+                </div>
+            </div>
+            <div class="col-4">
+                <div class="stat-mini">
+                    <div class="stat-value">@Team.ActiveMembers</div>
+                    <div class="stat-label">Actifs</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Configuration -->
+        <div class="config-info mb-3">
+            <small class="text-muted">
+                <i class="bi bi-gear me-1"></i>
+                Présences: @Team.MinPersonPresences-@Team.MaxPersonPresences/semaine,
+                @Team.MinDailyPresences-@Team.MaxDailyPresences/jour
+            </small>
+        </div>
+
+        <!-- Actions -->
+        <div class="d-flex gap-2">
+            <button class="btn btn-primary btn-sm" @onclick="() => OnViewDetails.InvokeAsync(Team.Id)">
+                <i class="bi bi-eye me-1"></i>Détails
+            </button>
+            <button class="btn btn-outline-primary btn-sm" @onclick="() => OnEdit.InvokeAsync(Team)">
+                <i class="bi bi-pencil me-1"></i>Modifier
+            </button>
+            <button class="btn btn-outline-success btn-sm" @onclick="() => OnManageMembers.InvokeAsync(Team)">
+                <i class="bi bi-people me-1"></i>Membres
+            </button>
+            <button class="btn btn-outline-danger btn-sm" @onclick="() => OnDelete.InvokeAsync(Team)">
+                <i class="bi bi-trash me-1"></i>Supprimer
+            </button>
+        </div>
+    </div>
+</div>
+
+<style>
+    .stat-mini {
+        padding: 0.5rem;
+    }
+
+    .stat-mini .stat-value {
+        font-size: 1.2rem;
+        font-weight: bold;
+        color: var(--primary-color);
+    }
+
+    .stat-mini .stat-label {
+        font-size: 0.75rem;
+        color: #6c757d;
+    }
+
+    .config-info {
+        background: #f8f9fa;
+        padding: 0.5rem;
+        border-radius: 5px;
+    }
+</style>
+
+@code {
+    [Parameter] public TeamDto Team { get; set; } = null!;
+    [Parameter] public EventCallback<int> OnViewDetails { get; set; }
+    [Parameter] public EventCallback<TeamDto> OnEdit { get; set; }
+    [Parameter] public EventCallback<TeamDto> OnManageMembers { get; set; }
+    [Parameter] public EventCallback<TeamDto> OnDelete { get; set; }
+}

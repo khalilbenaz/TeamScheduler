@@ -3,6 +3,7 @@
 @using Microsoft.EntityFrameworkCore
 @using PlanningPresenceBlazor.Data
 @using Microsoft.JSInterop
+@using CorePresenceStatus = TeamScheduler.Core.Enums.PresenceStatus
 @inject PlanningService PlanningService
 @inject ToastService ToastService
 @inject PlanningDbContext DbContext
@@ -171,18 +172,18 @@
                                 <tbody>
                                     @foreach (var employee in weekResult.Planning.OrderBy(x => x.Key))
                                     {
-                                        var presenceCount = employee.Value.Count(x => x.Value.Status == PresenceStatus.Present);
+                                        var presenceCount = employee.Value.Count(x => (CorePresenceStatus)x.Value.Status == CorePresenceStatus.Present);
                                         <tr style="font-size: 0.75rem;">
                                             <td class="fw-bold">@employee.Key</td>
                                             @foreach (var day in WeekDays)
                                             {
                                                 var presence = employee.Value[day];
                                                 <td class="text-center">
-                                                    @if (presence.Status == PresenceStatus.Present)
+                                                    @if ((CorePresenceStatus)presence.Status == CorePresenceStatus.Present)
                                                     {
                                                         <span class="badge bg-success" style="font-size: 0.6rem;">✓</span>
                                                     }
-                                                    else if (presence.Status == PresenceStatus.Conge)
+                                                    else if ((CorePresenceStatus)presence.Status == CorePresenceStatus.OnLeave)
                                                     {
                                                         <span class="badge bg-warning" style="font-size: 0.6rem;">C</span>
                                                     }
@@ -205,7 +206,7 @@
                                         <th>Total/jour</th>
                                         @foreach (var day in WeekDays)
                                         {
-                                            var dayPresences = weekResult.Planning.Values.Count(p => p[day].Status == PresenceStatus.Present);
+                                            var dayPresences = weekResult.Planning.Values.Count(p => (CorePresenceStatus)p[day].Status == CorePresenceStatus.Present);
                                             var isValid = ValidateDayConstraint(day, dayPresences, weekResult.Planning);
                                             <th class="text-center">
                                                 <span class="badge @(isValid ? "bg-success" : "bg-danger")" style="font-size: 0.6rem;">
@@ -215,7 +216,7 @@
                                         }
                                         <th class="text-center">
                                             <span class="badge bg-primary" style="font-size: 0.6rem;">
-                                                @weekResult.Planning.SelectMany(x => x.Value.Values).Count(x => x.Status == PresenceStatus.Present)
+                                                @weekResult.Planning.SelectMany(x => x.Value.Values).Count(x => (CorePresenceStatus)x.Status == CorePresenceStatus.Present)
                                             </span>
                                         </th>
                                     </tr>
@@ -478,7 +479,7 @@
 
     private int GetTotalPresences()
     {
-        return rotationResults.Sum(r => r.Planning.SelectMany(x => x.Value.Values).Count(x => x.Status == PresenceStatus.Present));
+        return rotationResults.Sum(r => r.Planning.SelectMany(x => x.Value.Values).Count(x => (CorePresenceStatus)x.Status == CorePresenceStatus.Present));
     }
 
     private double GetAveragePresencesPerWeek()
@@ -491,7 +492,7 @@
         if (rotationResults.Count < 2) return 0;
 
         var weeklyTotals = rotationResults.Select(r =>
-            r.Planning.SelectMany(x => x.Value.Values).Count(x => x.Status == PresenceStatus.Present)
+            r.Planning.SelectMany(x => x.Value.Values).Count(x => (CorePresenceStatus)x.Status == CorePresenceStatus.Present)
         ).ToList();
 
         var mean = weeklyTotals.Average();
@@ -515,7 +516,7 @@
     private int GetCompliantWeeks()
     {
         return rotationResults.Count(r => r.Planning.All(emp =>
-            emp.Value.Count(day => day.Value.Status == PresenceStatus.Present) >= 3));
+            emp.Value.Count(day => (CorePresenceStatus)day.Value.Status == CorePresenceStatus.Present) >= 3));
     }
 
     private List<EmployeeRotationStats> GetEmployeeRotationStats()
@@ -528,7 +529,7 @@
         foreach (var employee in allEmployees)
         {
             var weeklyPresences = rotationResults.Select(r =>
-                r.Planning[employee].Count(day => day.Value.Status == PresenceStatus.Present)
+                r.Planning[employee].Count(day => (CorePresenceStatus)day.Value.Status == CorePresenceStatus.Present)
             ).ToList();
 
             var total = weeklyPresences.Sum();

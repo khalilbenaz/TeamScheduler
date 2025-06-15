@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using PlanningPresenceBlazor.Data;
 using System.Text.Json;
+using LegacyClient = PlanningPresenceBlazor.Data.Client;
 
 namespace PlanningPresenceBlazor.Services
 {
@@ -802,7 +803,7 @@ namespace PlanningPresenceBlazor.Services
 
     public class ClientDetails
     {
-        public Client Client { get; set; } = null!;
+        public LegacyClient Client { get; set; } = null!;
         public List<ClientCompetenceRequise> CompetencesRequises { get; set; } = new();
         public List<Equipe> EquipesAffectees { get; set; } = new();
         public int NombreEmployesTotal { get; set; }

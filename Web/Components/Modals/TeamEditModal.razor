@@ -1,0 +1,131 @@
+@using TeamScheduler.Application.DTOs
+@using TeamScheduler.Web.Components.Modals
+@using Microsoft.AspNetCore.Components.Forms
+@using System.ComponentModel.DataAnnotations
+
+@if (IsVisible)
+{
+    <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-@(IsEditMode ? "pencil" : "plus-circle") me-2"></i>
+                        @(IsEditMode ? "Modifier" : "Créer") une équipe
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="OnCancel"></button>
+                </div>
+                <div class="modal-body">
+                    <EditForm Model="TeamModel" OnValidSubmit="HandleValidSubmit">
+                        <DataAnnotationsValidator />
+                        <div class="row g-3">
+                            <div class="col-md-8">
+                                <label class="form-label">Nom de l'équipe *</label>
+                                <InputText @bind-Value="TeamModel.Name" class="form-control" placeholder="Ex: Équipe Développement" />
+                                <ValidationMessage For="@(() => TeamModel.Name)" class="text-danger" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Code équipe</label>
+                                <InputText @bind-Value="TeamModel.Code" class="form-control" placeholder="Ex: DEV-01" />
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Description</label>
+                                <InputTextArea @bind-Value="TeamModel.Description" class="form-control" rows="2" placeholder="Description de l'équipe..." />
+                            </div>
+                            
+                            <div class="col-md-6">
+                                <label class="form-label">Chef d'équipe</label>
+                                <InputSelect @bind-Value="TeamModel.TeamLeaderId" class="form-select">
+                                    <option value="">-- Aucun --</option>
+                                    @foreach (var employee in AvailableEmployees.Where(e => e.IsActive))
+                                    {
+                                        <option value="@employee.Id">@employee.FullName</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Statut</label>
+                                <InputSelect @bind-Value="TeamModel.IsActive" class="form-select">
+                                    <option value="true">Active</option>
+                                    <option value="false">Inactive</option>
+                                </InputSelect>
+                            </div>
+
+                            <div class="col-12">
+                                <hr />
+                                <h6><i class="bi bi-gear me-2"></i>Configuration des présences</h6>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label">Présences par jour</label>
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <label class="form-label small">Min</label>
+                                        <InputNumber @bind-Value="TeamModel.MinDailyPresences" class="form-control" min="0" max="10" />
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label small">Max</label>
+                                        <InputNumber @bind-Value="TeamModel.MaxDailyPresences" class="form-control" min="0" max="10" />
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Présences par personne/semaine</label>
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <label class="form-label small">Min</label>
+                                        <InputNumber @bind-Value="TeamModel.MinPersonPresences" class="form-control" min="0" max="7" />
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label small">Max</label>
+                                        <InputNumber @bind-Value="TeamModel.MaxPersonPresences" class="form-control" min="0" max="7" />
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-6">
+                                <label class="form-label">Présences min. jours critiques</label>
+                                <InputNumber @bind-Value="TeamModel.MinCriticalDayPresences" class="form-control" min="0" max="5" />
+                                <small class="text-muted">Lundi, Mardi, Vendredi par défaut</small>
+                            </div>
+                        </div>
+                    </EditForm>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="OnCancel">Annuler</button>
+                    <button type="button" class="btn btn-primary" @onclick="HandleValidSubmit" disabled="@IsLoading">
+                        @if (IsLoading)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-check-circle me-1"></i>
+                        }
+                        @(IsEditMode ? "Modifier" : "Créer")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public bool IsEditMode { get; set; }
+    [Parameter] public TeamFormModel TeamModel { get; set; } = new();
+    [Parameter] public List<EmployeeDto> AvailableEmployees { get; set; } = new();
+    [Parameter] public EventCallback<TeamFormModel> OnSave { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public bool IsLoading { get; set; }
+
+    private async Task HandleValidSubmit()
+    {
+        if (OnSave.HasDelegate)
+        {
+            await OnSave.InvokeAsync(TeamModel);
+        }
+    }
+
+
+}

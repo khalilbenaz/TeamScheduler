@@ -44,7 +44,7 @@
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h6 class="mb-0">
                         <i class="bi bi-person-circle me-2 text-primary"></i>
-                        @employee.Nom
+                        @((!string.IsNullOrWhiteSpace(employee.Prenom) ? employee.Prenom + " " : "") + employee.Nom)
                     </h6>
                     <div>
                         @if (employee.EstActif)
@@ -149,6 +149,9 @@
                         <button class="btn btn-outline-info btn-sm" @onclick="() => TestNotification(employee)">
                             <i class="bi bi-bell" title="Test notification"></i>
                         </button>
+                        <button class="btn btn-outline-danger btn-sm" @onclick="() => ConfirmDeleteEmployee(employee)">
+                            <i class="bi bi-trash"></i>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -157,15 +160,15 @@
 </div>
 
 <!-- Modal d'ajout/modification -->
-@if (showModal)
+@if (showModal && editingEmployee != null)
 {
     <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.5);">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">
-                        <i class="bi bi-@(editingEmployee?.Id > 0 ? "pencil" : "person-plus") me-2"></i>
-                        @(editingEmployee?.Id > 0 ? "Modifier" : "Ajouter") un employé
+                        <i class="bi bi-@(editingEmployee.Id > 0 ? "pencil" : "person-plus") me-2"></i>
+                        @(editingEmployee.Id > 0 ? "Modifier" : "Ajouter") un employé
                     </h5>
                     <button type="button" class="btn-close" @onclick="CloseModal"></button>
                 </div>
@@ -176,11 +179,15 @@
                         <div class="row g-3">
                             <!-- Informations de base -->
                             <div class="col-md-6">
-                                <label class="form-label">Nom complet *</label>
-                                <InputText @bind-Value="editingEmployee.Nom" class="form-control" placeholder="Prénom Nom" />
+                                <label class="form-label">Prénom *</label>
+                                <InputText @bind-Value="editingEmployee.Prenom" class="form-control" placeholder="Prénom" />
+                                <ValidationMessage For="@(() => editingEmployee.Prenom)" class="text-danger" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Nom *</label>
+                                <InputText @bind-Value="editingEmployee.Nom" class="form-control" placeholder="Nom" />
                                 <ValidationMessage For="@(() => editingEmployee.Nom)" class="text-danger" />
                             </div>
-
                             <div class="col-md-6">
                                 <label class="form-label">Date d'embauche</label>
                                 <InputDate @bind-Value="editingEmployee.DateEmbauche" class="form-control" />
@@ -255,11 +262,39 @@
     </div>
 }
 
+<!-- Modal de confirmation de suppression -->
+@if (showDeleteModal && employeeToDelete != null)
+{
+    <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-trash me-2 text-danger"></i>
+                        Supprimer l'employé
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="() => showDeleteModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Voulez-vous vraiment supprimer <strong>@employeeToDelete.Nom</strong> ?<br />
+                    Cette action est <span class="text-danger">irréversible</span>.</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="() => showDeleteModal = false">Annuler</button>
+                    <button class="btn btn-danger" @onclick="DeleteEmployee">Supprimer</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private List<Employe> employees = new();
     private bool showModal = false;
     private bool isSaving = false;
     private Employe editingEmployee = new();
+    private bool showDeleteModal = false;
+    private Employe? employeeToDelete;
 
     protected override async Task OnInitializedAsync()
     {
@@ -289,6 +324,7 @@
             {
                 Id = employee.Id,
                 Nom = employee.Nom,
+                Prenom = employee.Prenom,
                 Email = employee.Email,
                 Telephone = employee.Telephone,
                 TeamsId = employee.TeamsId,
@@ -314,6 +350,7 @@
                 if (existing != null)
                 {
                     existing.Nom = editingEmployee.Nom;
+                    existing.Prenom = editingEmployee.Prenom;
                     existing.Email = editingEmployee.Email;
                     existing.Telephone = editingEmployee.Telephone;
                     existing.TeamsId = editingEmployee.TeamsId;
@@ -364,14 +401,39 @@
         }
     }
 
-    private async Task TestNotification(Employe employee)
+    private Task TestNotification(Employe employee)
     {
         ToastService.ShowInfo($"Test de notification pour {employee.Nom} - Fonctionnalité en développement", "Test notification");
+        return Task.CompletedTask;
     }
 
     private void CloseModal()
     {
         showModal = false;
         editingEmployee = new();
+    }
+
+    private void ConfirmDeleteEmployee(Employe employee)
+    {
+        employeeToDelete = employee;
+        showDeleteModal = true;
+    }
+
+    private async Task DeleteEmployee()
+    {
+        if (employeeToDelete == null) return;
+        try
+        {
+            DbContext.Employes.Remove(employeeToDelete);
+            await DbContext.SaveChangesAsync();
+            ToastService.ShowSuccess($"{employeeToDelete.Nom} supprimé avec succès", "Suppression");
+            showDeleteModal = false;
+            employeeToDelete = null;
+            await RefreshData();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur lors de la suppression: {ex.Message}", "Erreur");
+        }
     }
 }

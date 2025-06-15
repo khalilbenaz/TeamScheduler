@@ -1,0 +1,107 @@
+@page "/clients/{clientId:int}"
+@using Microsoft.EntityFrameworkCore
+@inject PlanningDbContext DbContext
+@inject NavigationManager Navigation
+
+@code {
+    [Parameter]
+    public int clientId { get; set; }
+    private PlanningPresenceBlazor.Data.Client? client;
+    private bool isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        client = await DbContext.Clients
+            .Include(c => c.Affectations)
+            .ThenInclude(a => a.Equipe)
+            .FirstOrDefaultAsync(c => c.Id == clientId);
+        isLoading = false;
+    }
+}
+
+<div class="page-header">
+    <nav>
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="/clients">Clients</a></li>
+            <li class="breadcrumb-item active">@client?.Nom ?? "Détails"</li>
+        </ol>
+    </nav>
+    <h1 class="page-title">
+        <i class="bi bi-building"></i>
+        @(client?.Nom ?? "Chargement...")
+    </h1>
+</div>
+
+@if (isLoading)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status"></div>
+        <p class="mt-3 text-muted">Chargement du client...</p>
+    </div>
+}
+else if (client == null)
+{
+    <div class="alert alert-warning" role="alert">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        Client introuvable ou supprimé.
+        <a href="/clients" class="alert-link">Retour à la liste des clients</a>
+    </div>
+}
+else
+{
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="bi bi-info-circle me-2"></i>Informations générales</h5>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label fw-bold">Nom</label>
+                    <p class="mb-2">@client.Nom</p>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label fw-bold">Code</label>
+                    <p class="mb-2">@(client.CodeClient ?? "Non défini")</p>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label fw-bold">Statut</label>
+                    <p class="mb-2">
+                        <span class="badge @(client.EstActif ? "bg-success" : "bg-secondary")">
+                            @(client.EstActif ? "Actif" : "Inactif")
+                        </span>
+                    </p>
+                </div>
+                <div class="col-12">
+                    <label class="form-label fw-bold">Description</label>
+                    <p class="mb-2">@(client.Description ?? "Aucune description")</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="bi bi-people me-2"></i>Affectations d'équipes</h5>
+        </div>
+        <div class="card-body">
+            @if (client.Affectations != null && client.Affectations.Any())
+            {
+                <ul class="list-group">
+                    @foreach (var aff in client.Affectations)
+                    {
+                        <li class="list-group-item">
+                            <i class="bi bi-people"></i> @aff.Equipe?.Nom ?? "(Équipe supprimée)" - du @aff.DateDebut.ToString("dd/MM/yyyy")
+                            @if (aff.DateFin != null)
+                            {
+                                <span>au @aff.DateFin.Value.ToString("dd/MM/yyyy")</span>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+            else
+            {
+                <p class="text-muted">Aucune affectation d'équipe</p>
+            }
+        </div>
+    </div>
+}

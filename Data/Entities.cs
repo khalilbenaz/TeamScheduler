@@ -7,7 +7,12 @@ namespace PlanningPresenceBlazor.Data
     {
         public int Id { get; set; }
         
+        [Required(ErrorMessage = "Le prénom est requis")]
+        [StringLength(100)]
+        public string Prenom { get; set; } = string.Empty;
+        
         [Required(ErrorMessage = "Le nom est requis")]
+        [StringLength(100)]
         public string Nom { get; set; } = string.Empty;
         
         public string? Email { get; set; }
@@ -30,6 +35,9 @@ namespace PlanningPresenceBlazor.Data
         public int NiveauCompetence { get; set; } = 1; // 1-5
         public int PresencesMinSemaine { get; set; } = 3; // Configuration individuelle
         public int PresencesMaxSemaine { get; set; } = 5;
+        public int JoursTeletravailObligatoires { get; set; } = 0;
+        public int JoursSiteObligatoires { get; set; } = 0;
+        public int JoursClientObligatoires { get; set; } = 0;
         
         // Relations
         public virtual ICollection<EmployeCompetence> Competences { get; set; } = new List<EmployeCompetence>();
@@ -69,6 +77,7 @@ namespace PlanningPresenceBlazor.Data
         // Relations
         public virtual ICollection<Employe> Membres { get; set; } = new List<Employe>();
         public virtual ICollection<AffectationEquipeClient> Affectations { get; set; } = new List<AffectationEquipeClient>();
+        public virtual ICollection<AffectationEquipeProjet> AffectationsProjets { get; set; } = new List<AffectationEquipeProjet>();
     }
 
     // Nouvelle entité Client
@@ -116,6 +125,9 @@ namespace PlanningPresenceBlazor.Data
         
         // Relations
         public virtual ICollection<AffectationEquipeClient> Affectations { get; set; } = new List<AffectationEquipeClient>();
+
+        // Ajout du champ Description pour la fiche client
+        public string? Description { get; set; }
     }
 
     // Affectation Équipe-Client
@@ -379,5 +391,47 @@ namespace PlanningPresenceBlazor.Data
         Approuve,
         Refuse,
         Annule
+    }
+
+    public class Presence
+    {
+        public int Id { get; set; }
+        public int EmployeId { get; set; }
+        public virtual Employe Employe { get; set; } = null!;
+        public DateTime Date { get; set; }
+        public string Status { get; set; } = "present"; // "present", "absent", "conge"
+        public string? Note { get; set; }
+    }
+
+    // Nouvelle entité Projet
+    public class Projet
+    {
+        public int Id { get; set; }
+        public string Nom { get; set; } = "";
+        public string? Description { get; set; }
+        public int ClientId { get; set; }
+        public virtual Client Client { get; set; } = null!;
+        public DateTime DateDebut { get; set; }
+        public DateTime? DateFin { get; set; }
+        public bool EstActif { get; set; } = true;
+        public DateTime DateCreation { get; set; } = DateTime.Now;
+        
+        // Relations avec les équipes affectées
+        public virtual ICollection<AffectationEquipeProjet> AffectationsEquipes { get; set; } = new List<AffectationEquipeProjet>();
+        public virtual ICollection<AffectationEquipeProjet> Affectations { get; set; } = new List<AffectationEquipeProjet>();
+    }
+
+    // Nouvelle entité pour lier équipes et projets
+    public class AffectationEquipeProjet
+    {
+        public int Id { get; set; }
+        public int EquipeId { get; set; }
+        public virtual Equipe Equipe { get; set; } = null!;
+        public int ProjetId { get; set; }
+        public virtual Projet Projet { get; set; } = null!;
+        public DateTime DateDebut { get; set; }
+        public DateTime? DateFin { get; set; }
+        public bool EstActive { get; set; } = true;
+        public string? Notes { get; set; }
     }
 }

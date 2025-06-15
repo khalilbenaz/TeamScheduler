@@ -1,0 +1,198 @@
+@page "/calendar"
+@using PlanningPresenceBlazor.Data
+@using Microsoft.EntityFrameworkCore
+@inject PlanningDbContext DbContext
+
+<h3>Calendrier des présences</h3>
+<div class="card card-modern mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label fw-bold">
+                    <i class="bi bi-calendar3"></i> Mois
+                </label>
+                <InputDate @bind-Value="selectedMonth" class="form-control form-control-modern" @onchange="OnSelectedMonthChanged" />
+            </div>
+            <div class="col-md-8 text-end">
+                <span class="badge bg-primary">
+                    @selectedMonth.ToString("MMMM yyyy", new System.Globalization.CultureInfo("fr-FR"))
+                </span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="calendar-table-wrapper">
+    <table class="table table-bordered calendar-table">
+        <thead>
+            <tr>
+                <th>Lun</th>
+                <th>Mar</th>
+                <th>Mer</th>
+                <th>Jeu</th>
+                <th>Ven</th>
+                <th>Sam</th>
+                <th>Dim</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var week in GetCalendarWeeks(selectedMonth))
+            {
+                <tr>
+                    @foreach (var day in week)
+                    {
+                        <td class="@(day.Month == selectedMonth.Month ? "" : "text-muted")">
+                            <div>
+                                <span class="fw-bold">@day.Day</span>
+                                @if (presencesByDay.TryGetValue(day, out var presences))
+                                {
+                                    <div>
+                                        <span class="badge bg-success">Présences: @presences</span>
+                                        @if (presencesNamesByDay.TryGetValue(day, out var names) && names.Any())
+                                        {
+                                            <ul class="list-unstyled mb-0 small">
+                                                @foreach (var name in names)
+                                                {
+                                                    var complet = employeNomComplet.TryGetValue(name, out var nc) ? nc : name;
+                                                    <li><i class="bi bi-person-circle text-success"></i> @complet</li>
+                                                }
+                                            </ul>
+                                        }
+                                    </div>
+                                }
+                                @if (congesByDay.TryGetValue(day, out var conges))
+                                {
+                                    <div>
+                                        <span class="badge bg-warning text-dark">Congés: @conges</span>
+                                    </div>
+                                }
+                            </div>
+                        </td>
+                    }
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private DateTime selectedMonth = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private Dictionary<DateTime, int> presencesByDay = new();
+    private Dictionary<DateTime, int> congesByDay = new();
+    private Dictionary<DateTime, List<string>> presencesNamesByDay = new();
+    private Dictionary<string, string> employeNomComplet = new(); // nom court -> Prénom + Nom
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ChargerNomsCompletsEmployes();
+        await LoadCalendarData();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadCalendarData();
+        StateHasChanged();
+    }
+
+    private async Task ChargerNomsCompletsEmployes()
+    {
+        var employes = await DbContext.Employes.ToListAsync();
+        employeNomComplet = employes.ToDictionary(e => e.Nom, e => string.IsNullOrWhiteSpace(e.Prenom) ? e.Nom : $"{e.Prenom} {e.Nom}");
+    }
+
+    private async Task LoadCalendarData()
+    {
+        var start = new DateTime(selectedMonth.Year, selectedMonth.Month, 1);
+        var end = start.AddMonths(1).AddDays(-1);
+
+        // Charger les présences (présences = status présent)
+        try
+        {
+            var presences = await DbContext.Presences
+                .Include(p => p.Employe)
+                .Where(p => p.Date >= start && p.Date <= end && p.Status == "present")
+                .ToListAsync();
+            presencesByDay = presences
+                .GroupBy(p => p.Date.Date)
+                .ToDictionary(g => g.Key, g => g.Count());
+            presencesNamesByDay = presences
+                .GroupBy(p => p.Date.Date)
+                .ToDictionary(g => g.Key, g => g.Select(p => p.Employe.Nom).ToList());
+        }
+        catch (Exception)
+        {
+            presencesByDay = new();
+            presencesNamesByDay = new();
+        }
+
+        // Charger les congés
+        congesByDay = (await DbContext.Conges
+            .Where(c => c.DateDebut <= end && c.DateFin >= start)
+            .ToListAsync())
+            .SelectMany(c => Enumerable.Range(0, (c.DateFin - c.DateDebut).Days + 1)
+                .Select(offset => c.DateDebut.AddDays(offset).Date))
+            .GroupBy(d => d)
+            .ToDictionary(g => g.Key, g => g.Count());
+    }
+
+    private IEnumerable<List<DateTime>> GetCalendarWeeks(DateTime month)
+    {
+        var firstDay = new DateTime(month.Year, month.Month, 1);
+
+        // Décale pour tomber sur le lundi (ou reste sur le même jour si déjà lundi)
+        int daysToMonday = ((int)firstDay.DayOfWeek + 6) % 7;
+        var firstMonday = firstDay.AddDays(-daysToMonday);
+
+        var weeks = new List<List<DateTime>>();
+        var current = firstMonday;
+        while (current.Month < month.Month || (current.Month == month.Month && current.Day <= DateTime.DaysInMonth(month.Year, month.Month)))
+        {
+            var week = new List<DateTime>();
+            for (int i = 0; i < 7; i++) week.Add(current.AddDays(i));
+            weeks.Add(week);
+            current = current.AddDays(7);
+        }
+        return weeks;
+    }
+
+
+    private async Task OnMonthChanged(ChangeEventArgs e)
+    {
+        if (e.Value != null && DateTime.TryParse(e.Value.ToString() + "-01", out var newMonth))
+        {
+            selectedMonth = newMonth;
+            await LoadCalendarData();
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnSelectedMonthChanged(ChangeEventArgs e)
+    {
+        if (e.Value != null && DateTime.TryParse(e.Value.ToString(), out var newDate))
+        {
+            selectedMonth = new DateTime(newDate.Year, newDate.Month, 1);
+            await LoadCalendarData();
+            StateHasChanged();
+        }
+    }
+
+    private string selectedMonthInput
+    {
+        get => selectedMonth.ToString("yyyy-MM");
+        set
+        {
+            if (DateTime.TryParse(value + "-01", out var newMonth))
+            {
+                selectedMonth = newMonth;
+                _ = LoadCalendarData();
+                StateHasChanged();
+            }
+        }
+    }
+}
+
+<style>
+.calendar-table-wrapper { overflow-x: auto; }
+.calendar-table th, .calendar-table td { text-align: center; vertical-align: top; min-width: 90px; height: 80px; }
+.calendar-table .badge { display: block; margin: 2px auto; font-size: 0.85em; }
+</style>

@@ -1,0 +1,54 @@
+@using TeamScheduler.Application.DTOs
+
+<div class="employee-card">
+    <img src="images/default-user.png" alt="Photo de @Employee?.FullName" class="employee-photo" />
+    <div class="employee-info">
+        <h4>@Employee?.FullName</h4>
+        <p>@Employee?.Position</p>
+        <p>@Employee?.Email</p>
+        <p><strong>Contrat :</strong> @Employee?.TypeContrat</p>
+        <p><strong>Date d'entrée :</strong> @(Employee?.DateEntree != null ? Employee.DateEntree.Value.ToString("dd/MM/yyyy") : "-")</p>
+        @if (Employee?.DateSortie != null)
+        {
+            <p><strong>Date de sortie :</strong> @Employee.DateSortie.Value.ToString("dd/MM/yyyy")</p>
+        }
+        <p><strong>Manager :</strong> @Employee?.ManagerName</p>
+        <p><strong>Jours télétravail :</strong> @Employee?.JoursTeletravail</p>
+        <p><strong>Jours site :</strong> @Employee?.JoursSite</p>
+        <p><strong>Jours client :</strong> @Employee?.JoursClient</p>
+        <p><strong>Plage horaire préférée :</strong> @Employee?.PlageHorairePreferee</p>
+        @if (Employee?.SubordonnesNoms != null && Employee.SubordonnesNoms.Any())
+        {
+            <p><strong>Subordonnés :</strong> @string.Join(", ", Employee.SubordonnesNoms)</p>
+        }
+    </div>
+    @if (Employee?.HistoriquePresences != null && Employee.HistoriquePresences.Any())
+    {
+        <div class="employee-presence-history mt-3">
+            <h6>Historique de présence</h6>
+            <table class="table table-sm table-bordered">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>Commentaire</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var p in Employee.HistoriquePresences.OrderByDescending(x => x.Date).Take(10))
+                {
+                    <tr>
+                        <td>@p.Date.ToString("dd/MM/yyyy")</td>
+                        <td>@p.Type</td>
+                        <td>@p.Commentaire</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public EmployeeDto? Employee { get; set; }
+}

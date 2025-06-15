@@ -36,7 +36,7 @@ namespace PlanningPresenceBlazor.Services
                 .ToListAsync();
         }
 
-        public async Task<bool> SaveCongesToDbAsync(List<CongeCsv> congesCsv)
+        public async Task<bool> SaveCongesToDbAsync(List<CongeCsv> congesCsv, DateTime weekStart, DateTime weekEnd)
         {
             try
             {
@@ -61,11 +61,9 @@ namespace PlanningPresenceBlazor.Services
 
                 if (conges.Any())
                 {
-                    var dateMin = conges.Min(c => c.DateDebut);
-                    var dateMax = conges.Max(c => c.DateFin);
-
+                    // Restreindre la suppression aux congés de la semaine affichée
                     var existingConges = await _db.Conges
-                        .Where(c => c.DateDebut <= dateMax && c.DateFin >= dateMin)
+                        .Where(c => c.DateDebut <= weekEnd && c.DateFin >= weekStart)
                         .ToListAsync();
 
                     _db.Conges.RemoveRange(existingConges);

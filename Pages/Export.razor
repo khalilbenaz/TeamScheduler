@@ -1,0 +1,101 @@
+@page "/export"
+@using PlanningPresenceBlazor.Services
+@using Microsoft.JSInterop
+@inject ExportService ExportService
+@inject ToastService ToastService
+@inject IJSRuntime JS
+
+<div class="page-header">
+    <h1 class="page-title">
+        <i class="bi bi-file-earmark-arrow-down"></i>
+        Export de données
+    </h1>
+    <p class="page-subtitle">Exportez les plannings, présences, congés, etc. au format CSV ou Excel.</p>
+</div>
+
+<div class="card card-modern mb-4">
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <button class="btn btn-primary btn-modern w-100" @onclick="ExportPlanning" disabled="@isExporting">
+                    @if (isExporting)
+                    {
+                        <div class="spinner-border spinner-border-sm me-2"></div>
+                    }
+                    <i class="bi bi-download me-2"></i>Exporter le planning (CSV)
+                </button>
+            </div>
+            <div class="col-md-6">
+                <button class="btn btn-outline-secondary btn-modern w-100" @onclick="ExportConges" disabled="@isExporting">
+                    @if (isExporting)
+                    {
+                        <div class="spinner-border spinner-border-sm me-2"></div>
+                    }
+                    <i class="bi bi-download me-2"></i>Exporter les congés (CSV)
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private bool isExporting = false;
+
+    private async Task ExportPlanning()
+    {
+        try
+        {
+            isExporting = true;
+            var csvContent = await ExportService.ExportPlanningAsync();
+            var fileName = $"planning_{DateTime.Now:yyyy-MM-dd}.csv";
+            await DownloadFile(csvContent, fileName, "text/csv");
+            ToastService.ShowSuccess("Export du planning terminé", "Succès");
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur export planning: {ex.Message}", "Erreur");
+        }
+        finally
+        {
+            isExporting = false;
+        }
+    }
+
+    private async Task ExportConges()
+    {
+        try
+        {
+            isExporting = true;
+            var csvContent = await ExportService.ExportCongesAsync();
+            var fileName = $"conges_{DateTime.Now:yyyy-MM-dd}.csv";
+            await DownloadFile(csvContent, fileName, "text/csv");
+            ToastService.ShowSuccess("Export des congés terminé", "Succès");
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur export congés: {ex.Message}", "Erreur");
+        }
+        finally
+        {
+            isExporting = false;
+        }
+    }
+
+    private async Task DownloadFile(string content, string fileName, string contentType)
+    {
+        var bytes = System.Text.Encoding.UTF8.GetBytes(content);
+        var base64 = Convert.ToBase64String(bytes);
+        await JS.InvokeVoidAsync("downloadFile", fileName, contentType, base64);
+    }
+}
+
+<script>
+    window.downloadFile = (fileName, contentType, base64Data) => {
+        const link = document.createElement('a');
+        link.download = fileName;
+        link.href = `data:${contentType};base64,${base64Data}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+</script>

@@ -1,3 +1,4 @@
+@page "/clients/{clientId:int}/competences"
 @page "/competences"
 @using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.EntityFrameworkCore
@@ -174,6 +175,16 @@
                     </div>
                 </div>
             </div>
+        }
+
+        @if (!string.IsNullOrEmpty(Message))
+        {
+            <div class="alert @MessageCssClass">@Message</div>
+        }
+
+        @if (competences == null || !competences.Any())
+        {
+            <div class="alert alert-warning mt-3">Aucune compétence trouvée.</div>
         }
     </div>
 }
@@ -444,7 +455,7 @@ else if (activeTab == "matrix")
                             </div>
                         </div>
                         <div class="col-md-2">
-                            <button class="btn btn-success" @onclick="AddEmployeeCompetence">
+                            <button class="btn btn-success" @onclick="AddEmployeeCompetence" disabled="@(newEmployeeCompetence.CompetenceId == 0)">
                                 <i class="bi bi-plus-circle"></i>
                             </button>
                         </div>
@@ -462,6 +473,30 @@ else if (activeTab == "matrix")
 }
 
 <style>
+    .nav.nav-tabs {
+        background: #f8fafc;
+        border-radius: 10px 10px 0 0;
+        border-bottom: 2px solid #e5e7eb;
+    }
+    .nav-tabs .nav-link {
+        color: #2563eb;
+        font-weight: 600;
+        border: none;
+        background: none;
+        border-radius: 10px 10px 0 0;
+        margin-right: 2px;
+        transition: background 0.2s, color 0.2s;
+    }
+    .nav-tabs .nav-link.active, .nav-tabs .nav-link:focus {
+        background: #2563eb;
+        color: #fff;
+        border: none;
+    }
+    .nav-tabs .nav-link:hover {
+        background: #e0e7ef;
+        color: #2563eb;
+    }
+
     .competence-cell {
         width: 36px;
         height: 36px;
@@ -483,6 +518,9 @@ else if (activeTab == "matrix")
 </style>
 
 @code {
+    [Parameter]
+    public int clientId { get; set; } = 0;
+
     private List<Competence> competences = new();
     private List<Employe> employees = new();
     private List<Equipe> teams = new();
@@ -501,6 +539,9 @@ else if (activeTab == "matrix")
     private string filterCategory = "";
     private int filterTeamId = 0;
 
+    private string? Message;
+    private string MessageCssClass = "alert-info";
+
     protected override async Task OnInitializedAsync()
     {
         await LoadData();
@@ -508,25 +549,46 @@ else if (activeTab == "matrix")
 
     private async Task LoadData()
     {
-        competences = await DbContext.Competences
-            .Include(c => c.Employes)
-            .ThenInclude(ec => ec.Employe)
-            .ThenInclude(e => e.Equipe)
-            .Where(c => c.EstActive)
-            .ToListAsync();
+        await LoadCompetences();
+        await LoadEmployees();
+        await LoadTeams();
+    }
 
+    private async Task LoadCompetences()
+    {
+        try
+        {
+            competences = await DbContext.Competences
+                .Include(c => c.Employes)
+                .ThenInclude(ec => ec.Employe)
+                .ThenInclude(e => e.Equipe)
+                .Where(c => c.EstActive)
+                .ToListAsync();
+
+            Message = null;
+        }
+        catch (Exception ex)
+        {
+            Message = $"Erreur lors du chargement des compétences : {ex.Message}";
+            MessageCssClass = "alert-danger";
+        }
+    }
+
+    private async Task LoadEmployees()
+    {
         employees = await DbContext.Employes
             .Include(e => e.Competences)
             .ThenInclude(ec => ec.Competence)
             .Include(e => e.Equipe)
             .Where(e => e.EstActif)
             .ToListAsync();
+    }
 
+    private async Task LoadTeams()
+    {
         teams = await DbContext.Equipes
             .Where(t => t.EstActive)
             .ToListAsync();
-
-        StateHasChanged();
     }
 
     private void SetActiveTab(string tab)
@@ -713,7 +775,12 @@ else if (activeTab == "matrix")
             ToastService.ShowWarning("Veuillez sélectionner une compétence", "Sélection requise");
             return;
         }
-
+        // Vérifier si la compétence est déjà assignée
+        if (selectedEmployee.Competences.Any(ec => ec.CompetenceId == newEmployeeCompetence.CompetenceId))
+        {
+            ToastService.ShowError("Cette compétence est déjà assignée à cet employé", "Doublon");
+            return;
+        }
         try
         {
             newEmployeeCompetence.EmployeId = selectedEmployee.Id;
@@ -733,6 +800,7 @@ else if (activeTab == "matrix")
                 Niveau = 1,
                 EstCertifie = false
             };
+            StateHasChanged();
         }
         catch (Exception ex)
         {

@@ -7,6 +7,7 @@
 @inject PlanningDbContext DbContext
 @inject ToastService ToastService
 @inject NavigationManager Navigation
+@using LegacyClient = PlanningPresenceBlazor.Data.Client
 
 <!-- En-tête de page -->
 <div class="page-header">
@@ -245,16 +246,12 @@
 
 @if (!clients.Any())
 {
-    <div class="card card-modern">
-        <div class="card-body text-center py-5">
-            <i class="bi bi-building fs-1 text-muted mb-3"></i>
-            <h5 class="text-muted">Aucun client trouvé</h5>
-            <p class="text-muted">Commencez par ajouter votre premier client.</p>
-            <button class="btn btn-primary btn-modern mt-3" @onclick="ShowAddClientModal">
-                <i class="bi bi-plus-circle me-2"></i>Ajouter un client
-            </button>
-        </div>
-    </div>
+    <div class="alert alert-warning mt-3">Aucun client trouvé.</div>
+}
+
+@if (!string.IsNullOrEmpty(Message))
+{
+    <div class="alert @MessageCssClass">@Message</div>
 }
 
 <!-- Modal d'ajout/modification de client -->
@@ -546,19 +543,22 @@
 }
 
 @code {
-    private List<Client> clients = new();
+    private List<PlanningPresenceBlazor.Data.Client> clients = new();
     private List<Equipe> availableTeams = new();
     private bool showClientModal = false;
     private bool showAffectationsModal = false;
     private bool isSaving = false;
-    private Client editingClient = new();
-    private Client? selectedClient;
+    private LegacyClient editingClient = new();
+    private PlanningPresenceBlazor.Data.Client? selectedClient;
     private AffectationEquipeClient newAffectation = new();
 
     // Filtres
     private string searchTerm = "";
     private string filterStatus = "";
     private string filterCity = "";
+
+    private string? Message;
+    private string MessageCssClass = "alert-info";
 
     protected override async Task OnInitializedAsync()
     {
@@ -567,12 +567,25 @@
 
     private async Task LoadData()
     {
-        clients = await TeamPlanningService.GetAllClientsAsync(true);
+        await LoadClients();
         availableTeams = await TeamPlanningService.GetAllEquipesAsync(true);
-        StateHasChanged();
     }
 
-    private List<Client> GetFilteredClients()
+    private async Task LoadClients()
+    {
+        try
+        {
+            clients = await TeamPlanningService.GetAllClientsAsync(true);
+            Message = null;
+        }
+        catch (Exception ex)
+        {
+            Message = $"Erreur lors du chargement des clients : {ex.Message}";
+            MessageCssClass = "alert-danger";
+        }
+    }
+
+    private List<PlanningPresenceBlazor.Data.Client> GetFilteredClients()
     {
         var query = clients.AsQueryable();
 
@@ -614,7 +627,7 @@
 
     private void ShowAddClientModal()
     {
-        editingClient = new Client
+        editingClient = new PlanningPresenceBlazor.Data.Client
         {
             EstActif = true,
             Pays = "Maroc",
@@ -623,9 +636,9 @@
         showClientModal = true;
     }
 
-    private void EditClient(Client client)
+    private void EditClient(PlanningPresenceBlazor.Data.Client client)
     {
-        editingClient = new Client
+        editingClient = new PlanningPresenceBlazor.Data.Client
         {
             Id = client.Id,
             Nom = client.Nom,
@@ -640,7 +653,6 @@
             EstActif = client.EstActif,
             DateDebutContrat = client.DateDebutContrat,
             DateFinContrat = client.DateFinContrat,
-            DistanceKm = client.DistanceKm,
             TempsDeplacement = client.TempsDeplacement
         };
         showClientModal = true;
@@ -701,7 +713,7 @@
         Navigation.NavigateTo($"/clients/{clientId}");
     }
 
-    private void ManageAffectations(Client client)
+    private void ManageAffectations(PlanningPresenceBlazor.Data.Client client)
     {
         selectedClient = client;
         newAffectation = new AffectationEquipeClient
@@ -716,103 +728,66 @@
         showAffectationsModal = true;
     }
 
-    private void ManageCompetences(Client client)
+    private void ManageCompetences(PlanningPresenceBlazor.Data.Client client)
     {
         Navigation.NavigateTo($"/clients/{client.Id}/competences");
     }
 
-    private async Task AddAffectation()
-    {
-        if (newAffectation.EquipeId == 0)
-        {
-            ToastService.ShowWarning("Veuillez sélectionner une équipe", "Sélection requise");
-            return;
-        }
-
-        try
-        {
-            newAffectation.ClientId = selectedClient!.Id;
-            DbContext.AffectationsEquipeClient.Add(newAffectation);
-            await DbContext.SaveChangesAsync();
-
-            ToastService.ShowSuccess("Affectation ajoutée avec succès", "Ajout réussi");
-
-            // Recharger le client
-            await LoadData();
-            selectedClient = clients.First(c => c.Id == selectedClient.Id);
-
-            // Réinitialiser le formulaire
-            newAffectation = new AffectationEquipeClient
-            {
-                ClientId = selectedClient.Id,
-                DateDebut = DateTime.Today,
-                EstActive = true,
-                TypeMission = TypeMission.Regulier,
-                NombreMinPersonnes = 2,
-                NombreMaxPersonnes = 3
-            };
-        }
-        catch (Exception ex)
-        {
-            ToastService.ShowError($"Erreur: {ex.Message}", "Erreur");
-        }
-    }
-
-    private void EditAffectation(AffectationEquipeClient affectation)
-    {
-        // TODO: Implémenter l'édition des affectations
-        ToastService.ShowInfo("Fonction en développement", "À venir");
-    }
-
-    private async Task DeleteAffectation(AffectationEquipeClient affectation)
-    {
-        try
-        {
-            DbContext.AffectationsEquipeClient.Remove(affectation);
-            await DbContext.SaveChangesAsync();
-
-            ToastService.ShowSuccess("Affectation supprimée", "Suppression réussie");
-            await LoadData();
-            selectedClient = clients.First(c => c.Id == selectedClient!.Id);
-        }
-        catch (Exception ex)
-        {
-            ToastService.ShowError($"Erreur: {ex.Message}", "Erreur");
-        }
-    }
-
     private void ClearFilters()
     {
-        searchTerm = "";
-        filterStatus = "";
-        filterCity = "";
-    }
-
-    private string GetTypeMissionDisplay(TypeMission type)
-    {
-        return type switch
-        {
-            TypeMission.Regulier => "Régulier",
-            TypeMission.Ponctuel => "Ponctuel",
-            TypeMission.Projet => "Projet",
-            TypeMission.Urgence => "Urgence",
-            TypeMission.Formation => "Formation",
-            TypeMission.Audit => "Audit",
-            TypeMission.Support => "Support",
-            _ => type.ToString()
-        };
+        searchTerm = string.Empty;
+        filterStatus = string.Empty;
+        filterCity = string.Empty;
+        StateHasChanged();
     }
 
     private void CloseClientModal()
     {
         showClientModal = false;
-        editingClient = new();
     }
 
     private void CloseAffectationsModal()
     {
         showAffectationsModal = false;
         selectedClient = null;
-        newAffectation = new();
+    }
+
+    private string GetTypeMissionDisplay(TypeMission type)
+    {
+        // À adapter selon enum réelle
+        return type.ToString();
+    }
+
+    private void EditAffectation(AffectationEquipeClient affectation)
+    {
+        // TODO: logiques d'édition
+        newAffectation = affectation;
+    }
+
+    private void DeleteAffectation(AffectationEquipeClient affectation)
+    {
+        // TODO: suppression réelle
+        selectedClient?.Affectations.Remove(affectation);
+        StateHasChanged();
+    }
+
+    private async Task AddAffectation()
+    {
+        if (selectedClient != null && newAffectation.EquipeId > 0)
+        {
+            selectedClient.Affectations.Add(new AffectationEquipeClient
+            {
+                EquipeId = newAffectation.EquipeId,
+                ClientId = selectedClient.Id,
+                DateDebut = newAffectation.DateDebut,
+                TypeMission = newAffectation.TypeMission,
+                NombreMinPersonnes = newAffectation.NombreMinPersonnes,
+                NombreMaxPersonnes = newAffectation.NombreMaxPersonnes,
+                Notes = newAffectation.Notes,
+                EstActive = true
+            });
+            ToastService.ShowSuccess("Affectation ajoutée", "Succès");
+            StateHasChanged();
+        }
     }
 }

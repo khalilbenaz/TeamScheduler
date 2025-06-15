@@ -5,6 +5,7 @@
 @using PlanningPresenceBlazor.Data
 @using PlanningPresenceBlazor.Services
 @using System.Text.Json
+@using CorePresenceStatus = TeamScheduler.Core.Enums.PresenceStatus
 @inject TeamPlanningService TeamPlanningService
 @inject PlanningDbContext DbContext
 @inject ToastService ToastService
@@ -146,6 +147,12 @@
             <div class="mb-1">• @warning</div>
         }
     </div>
+}
+
+<!-- Message contextuel -->
+@if (!string.IsNullOrEmpty(Message))
+{
+    <div class="alert @MessageCssClass">@Message</div>
 }
 
 <!-- Affichage selon le mode -->
@@ -414,7 +421,23 @@ else if (!HasPlanningData())
 
 @code {
     private List<Equipe> teams = new();
-    private DateTime selectedDate = DateTime.Today;
+    private DateTime _selectedDate = DateTime.Today;
+    private DateTime selectedDate
+    {
+        get => _selectedDate;
+        set
+        {
+            var monday = GetMondayOfWeek(value);
+            if (_selectedDate != monday)
+            {
+                _selectedDate = monday;
+                teamPlanningResult = null;
+                globalPlanningResult = null;
+                clientPlanningViews = null;
+                StateHasChanged();
+            }
+        }
+    }
     private string planningMode = "single";
     private bool isGenerating = false;
     private bool isExporting = false;
@@ -426,11 +449,16 @@ else if (!HasPlanningData())
     private ConfigurationPlanning? activeConfig;
 
     private static readonly string[] WeekDays = { "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi" };
+    private Dictionary<string, string> employeNomComplet = new(); // nom court -> nom complet
+    
+    private string? Message;
+    private string MessageCssClass = "alert-info";
 
     protected override async Task OnInitializedAsync()
     {
         selectedDate = GetMondayOfWeek(DateTime.Today);
         await LoadData();
+        await ChargerNomsCompletsEmployes();
     }
 
     private async Task LoadData()
@@ -438,6 +466,23 @@ else if (!HasPlanningData())
         teams = await TeamPlanningService.GetAllEquipesAsync(true);
         activeConfig = await TeamPlanningService.GetActiveConfigurationAsync();
         StateHasChanged();
+    }
+
+    private async Task ChargerNomsCompletsEmployes()
+    {
+        // Récupérer tous les employés actifs pour la correspondance nom court -> nom complet
+        var allEmployes = await TeamPlanningService.GetAllEquipesAsync(true);
+        employeNomComplet.Clear();
+        foreach (var eq in allEmployes)
+        {
+            foreach (var emp in eq.Membres)
+            {
+                if (!employeNomComplet.ContainsKey(emp.Nom))
+                {
+                    employeNomComplet[emp.Nom] = string.IsNullOrWhiteSpace(emp.Prenom) ? emp.Nom : $"{emp.Prenom} {emp.Nom}";
+                }
+            }
+        }
     }
 
     private int _selectedTeamId; // Le champ "backing" réel
@@ -485,8 +530,7 @@ else if (!HasPlanningData())
                 case "single":
                     if (selectedTeamId > 0)
                     {
-                        teamPlanningResult = await TeamPlanningService.GenerateTeamPlanningAsync(selectedTeamId, monday);
-                        ToastService.ShowSuccess("Planning d'équipe généré avec succès", "Génération terminée");
+                        await GenerateTeamPlanning();
                     }
                     else
                     {
@@ -508,6 +552,31 @@ else if (!HasPlanningData())
         catch (Exception ex)
         {
             ToastService.ShowError($"Erreur lors de la génération: {ex.Message}", "Erreur");
+        }
+        finally
+        {
+            isGenerating = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task GenerateTeamPlanning()
+    {
+        try
+        {
+            isGenerating = true;
+            var monday = GetMondayOfWeek(selectedDate);
+
+            teamPlanningResult = await TeamPlanningService.GenerateTeamPlanningAsync(selectedTeamId, monday);
+            ToastService.ShowSuccess("Planning d'équipe généré avec succès", "Génération terminée");
+
+            Message = "Planning d'équipe généré avec succès.";
+            MessageCssClass = "alert-success";
+        }
+        catch (Exception ex)
+        {
+            Message = $"Erreur lors de la génération du planning d'équipe : {ex.Message}";
+            MessageCssClass = "alert-danger";
         }
         finally
         {
@@ -557,14 +626,15 @@ else if (!HasPlanningData())
 
         // Body
         builder.OpenElement(19, "tbody");
-
         foreach (var employee in result.Planning.OrderBy(x => x.Key))
         {
             builder.OpenElement(20, "tr");
 
             builder.OpenElement(21, "td");
             builder.AddAttribute(22, "class", "fw-bold");
-            builder.AddContent(23, employee.Key);
+            // Afficher nom complet si possible
+            var nomComplet = employeNomComplet.TryGetValue(employee.Key, out var nc) ? nc : employee.Key;
+            builder.AddContent(23, nomComplet);
             builder.CloseElement();
 
             foreach (var day in WeekDays)
@@ -573,30 +643,41 @@ else if (!HasPlanningData())
                 builder.OpenElement(24, "td");
                 builder.AddAttribute(25, "class", "text-center");
 
-                var statusClass = presence.Status switch
+                var statusClass = ConvertToCorePresenceStatus(presence.Status) switch
                 {
-                    PresenceStatus.Present => "status-present",
-                    PresenceStatus.Conge => "status-conge",
+                    CorePresenceStatus.Present => "status-present",
+                    CorePresenceStatus.OnLeave => "status-conge",
                     _ => "status-absent"
                 };
 
-                var statusText = presence.Status switch
+                var statusText = ConvertToCorePresenceStatus(presence.Status) switch
                 {
-                    PresenceStatus.Present => "P",
-                    PresenceStatus.Conge => "C",
+                    CorePresenceStatus.Present => "P",
+                    CorePresenceStatus.OnLeave => "C",
                     _ => "-"
                 };
 
-                builder.OpenElement(26, "span");
-                builder.AddAttribute(27, "class", $"badge {statusClass}");
-                builder.AddAttribute(28, "title", presence.Note);
-                builder.AddContent(29, statusText);
-                builder.CloseElement();
+                // Afficher le badge avec info-bulle nom complet si présent
+                if (ConvertToCorePresenceStatus(presence.Status) == CorePresenceStatus.Present)
+                {
+                    builder.OpenElement(26, "span");
+                    builder.AddAttribute(27, "class", $"badge {statusClass}");
+                    builder.AddAttribute(28, "title", nomComplet);
+                    builder.AddContent(29, statusText);
+                    builder.CloseElement();
+                }
+                else
+                {
+                    builder.OpenElement(26, "span");
+                    builder.AddAttribute(27, "class", $"badge {statusClass}");
+                    builder.AddContent(29, statusText);
+                    builder.CloseElement();
+                }
 
                 builder.CloseElement(); // td
             }
 
-            var total = employee.Value.Count(x => x.Value.Status == PresenceStatus.Present);
+            var total = employee.Value.Count(x => (CorePresenceStatus)x.Value.Status == CorePresenceStatus.Present);
             builder.OpenElement(30, "td");
             builder.AddAttribute(31, "class", "text-center");
             builder.OpenElement(32, "span");
@@ -621,17 +702,29 @@ else if (!HasPlanningData())
 
         foreach (var day in WeekDays)
         {
-            var dayTotal = result.Planning.Values.Count(p => p[day].Status == PresenceStatus.Present);
+            // Afficher la liste des présents (noms complets) en info-bulle
+            var presents = result.Planning.Where(p => (CorePresenceStatus)p.Value[day].Status == CorePresenceStatus.Present).Select(p => employeNomComplet.TryGetValue(p.Key, out var nc) ? nc : p.Key).ToList();
             builder.OpenElement(40, "th");
             builder.AddAttribute(41, "class", "text-center");
-            builder.AddContent(42, dayTotal);
+            if (presents.Any())
+            {
+                builder.OpenElement(42, "span");
+                builder.AddAttribute(43, "class", "badge bg-success");
+                builder.AddAttribute(44, "title", string.Join(", ", presents));
+                builder.AddContent(45, presents.Count);
+                builder.CloseElement();
+            }
+            else
+            {
+                builder.AddContent(46, "0");
+            }
             builder.CloseElement();
         }
 
-        var grandTotal = result.Planning.Values.Sum(p => p.Count(x => x.Value.Status == PresenceStatus.Present));
-        builder.OpenElement(43, "th");
-        builder.AddAttribute(44, "class", "text-center");
-        builder.AddContent(45, grandTotal);
+        var grandTotal = result.Planning.Values.Sum(p => p.Count(x => (CorePresenceStatus)x.Value.Status == CorePresenceStatus.Present));
+        builder.OpenElement(47, "th");
+        builder.AddAttribute(48, "class", "text-center");
+        builder.AddContent(49, grandTotal);
         builder.CloseElement();
 
         builder.CloseElement(); // tr
@@ -733,7 +826,7 @@ else if (!HasPlanningData())
     private int GetTotalPresences()
     {
         if (teamPlanningResult != null)
-            return teamPlanningResult.Planning.Values.Sum(p => p.Count(x => x.Value.Status == PresenceStatus.Present));
+            return teamPlanningResult.Planning.Values.Sum(p => p.Count(x => (CorePresenceStatus)x.Value.Status == CorePresenceStatus.Present));
 
         if (globalPlanningResult != null)
             return globalPlanningResult.TotalPresences;
@@ -788,5 +881,17 @@ else if (!HasPlanningData())
     {
         var cal = System.Globalization.CultureInfo.CurrentCulture.Calendar;
         return cal.GetWeekOfYear(date, System.Globalization.CalendarWeekRule.FirstFourDayWeek, DayOfWeek.Monday);
+    }
+
+    // Conversion explicite entre enums Service/Core
+    private CorePresenceStatus ConvertToCorePresenceStatus(PlanningPresenceBlazor.Services.PresenceStatus status)
+    {
+        return status switch
+        {
+            PlanningPresenceBlazor.Services.PresenceStatus.Present => CorePresenceStatus.Present,
+            PlanningPresenceBlazor.Services.PresenceStatus.Absent => CorePresenceStatus.Absent,
+            PlanningPresenceBlazor.Services.PresenceStatus.Conge => CorePresenceStatus.OnLeave,
+            _ => CorePresenceStatus.Absent
+        };
     }
 }

@@ -1,0 +1,81 @@
+.week-planning-grid {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+.day-column {
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    padding: 1rem;
+    flex: 1 1 0;
+    min-width: 120px;
+    position: relative;
+}
+.day-column.today {
+    border: 2px solid #3b82f6;
+    background: #f0f7ff;
+}
+.day-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+.employee-badge {
+    background: #f3f4f6;
+    border-radius: 20px;
+    padding: 0.25rem 0.75rem;
+    margin-bottom: 0.25rem;
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.95em;
+    font-weight: 500;
+}
+.badge-present {
+    color: #10b981;
+    background: #e0f7ef;
+}
+.badge-conge {
+    color: #f59e0b;
+    background: #fff7e6;
+}
+.more-employees {
+    margin-top: 0.25rem;
+    position: relative;
+}
+.more-employees button {
+    color: #3b82f6;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 0.95em;
+    text-decoration: underline;
+}
+.popover-employees {
+    position: absolute;
+    left: 0;
+    top: 2.2rem;
+    z-index: 10;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    padding: 0.5rem 1rem;
+    min-width: 180px;
+    max-width: 220px;
+    max-height: 220px;
+    overflow-y: auto;
+    animation: fadeIn 0.2s;
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.no-data {
+    color: #bdbdbd;
+    text-align: center;
+    font-size: 1.2em;
+    margin-top: 1.5rem;
+}

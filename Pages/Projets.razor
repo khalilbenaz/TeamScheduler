@@ -1,0 +1,573 @@
+@page "/projets"
+@using PlanningPresenceBlazor.Data
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Forms
+@using System.ComponentModel.DataAnnotations
+@using PlanningPresenceBlazor.Services
+@inject PlanningDbContext DbContext
+@inject ToastService ToastService
+
+<div class="page-header">
+    <h1 class="page-title">
+        <i class="bi bi-briefcase"></i>
+        Gestion des Projets
+    </h1>
+    <p class="page-subtitle">Gérez vos projets et leurs affectations d'équipes</p>
+</div>
+
+<div class="card card-modern mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label">Rechercher</label>
+                <input type="text" class="form-control form-control-modern"
+                       placeholder="Nom du projet..."
+                       @bind="searchTerm" @bind:event="oninput" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Client</label>
+                <select @bind="filterClientId" class="form-select form-control-modern">
+                    <option value="0">Tous les clients</option>
+                    @foreach (var client in clients)
+                    {
+                        <option value="@client.Id">@client.Nom</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-4">
+                <button class="btn btn-success btn-modern" @onclick="ShowAddProjectModal">
+                    <i class="bi bi-plus-circle me-2"></i>Nouveau projet
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    @foreach (var projet in GetFilteredProjets())
+    {
+        <div class="col-md-6 mb-4">
+            <div class="card card-modern">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="bi bi-briefcase me-2 text-primary"></i>
+                        @projet.Nom
+                    </h5>
+                    <span class="badge @(projet.EstActif ? "bg-success" : "bg-secondary")">
+                        @(projet.EstActif ? "Actif" : "Inactif")
+                    </span>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted">@projet.Description</p>
+                    <div class="mb-2">
+                        <strong>Client:</strong> @projet.Client?.Nom
+                    </div>
+                    <div class="mb-2">
+                        <strong>Dates:</strong> @projet.DateDebut.ToString("dd/MM/yyyy") - 
+                        @(projet.DateFin?.ToString("dd/MM/yyyy") ?? "Indéterminée")
+                    </div>
+                    
+                    <!-- Équipes affectées -->
+                    <div class="mb-3">
+                        <strong>Équipes affectées:</strong>
+                        @if (projet.Affectations.Any(a => a.EstActive))
+                        {
+                            <div class="d-flex flex-wrap gap-1 mt-1">
+                                @foreach (var affectation in projet.Affectations.Where(a => a.EstActive))
+                                {
+                                    <span class="badge bg-success">
+                                        @affectation.Equipe.Nom
+                                    </span>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <span class="text-muted"> Aucune équipe affectée</span>
+                        }
+                    </div>
+                    
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-outline-primary btn-sm" @onclick="() => EditProject(projet)">
+                            <i class="bi bi-pencil"></i> Modifier
+                        </button>
+                        <button class="btn btn-outline-info btn-sm" @onclick="() => ManageTeamAssignments(projet)">
+                            <i class="bi bi-people"></i> Équipes
+                        </button>
+                        <button class="btn btn-outline-danger btn-sm" @onclick="() => DeleteProject(projet)">
+                            <i class="bi bi-trash"></i> Supprimer
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@if (!projets.Any())
+{
+    <div class="card card-modern">
+        <div class="card-body text-center py-5">
+            <i class="bi bi-briefcase fs-1 text-muted mb-3"></i>
+            <h5 class="text-muted">Aucun projet créé</h5>
+            <p class="text-muted">Commencez par créer votre premier projet.</p>
+        </div>
+    </div>
+}
+
+<!-- Modal d'ajout/modification de projet -->
+@if (showProjectModal)
+{
+    <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-@(editingProject?.Id > 0 ? "pencil" : "plus-circle") me-2"></i>
+                        @(editingProject?.Id > 0 ? "Modifier" : "Créer") un projet
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseProjectModal"></button>
+                </div>
+
+                <EditForm Model="editingProject" OnValidSubmit="SaveProject">
+                    <DataAnnotationsValidator />
+                    <div class="modal-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Nom du projet *</label>
+                                <InputText @bind-Value="editingProject.Nom" class="form-control" />
+                                <ValidationMessage For="@(() => editingProject.Nom)" class="text-danger" />
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label">Client *</label>
+                                <InputSelect @bind-Value="editingProject.ClientId" class="form-select">
+                                    <option value="0">-- Sélectionner un client --</option>
+                                    @foreach (var client in clients)
+                                    {
+                                        <option value="@client.Id">@client.Nom</option>
+                                    }
+                                </InputSelect>
+                                <ValidationMessage For="@(() => editingProject.ClientId)" class="text-danger" />
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label">Description</label>
+                                <InputTextArea @bind-Value="editingProject.Description" class="form-control" rows="3" />
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label">Date de début *</label>
+                                <InputDate @bind-Value="editingProject.DateDebut" class="form-control" />
+                                <ValidationMessage For="@(() => editingProject.DateDebut)" class="text-danger" />
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label">Date de fin</label>
+                                <InputDate @bind-Value="editingProject.DateFin" class="form-control" />
+                            </div>
+
+                            <div class="col-12">
+                                <div class="form-check">
+                                    <InputCheckbox @bind-Value="editingProject.EstActif" class="form-check-input" id="projetActif" />
+                                    <label class="form-check-label" for="projetActif">
+                                        <strong>Projet actif</strong>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @onclick="CloseProjectModal">
+                            Annuler
+                        </button>
+                        <button type="submit" class="btn btn-primary" disabled="@isSaving">
+                            @if (isSaving)
+                            {
+                                <div class="spinner-border spinner-border-sm me-2"></div>
+                            }
+                            <i class="bi bi-check-circle me-1"></i>
+                            @(editingProject?.Id > 0 ? "Modifier" : "Créer")
+                        </button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Modal de gestion des affectations d'équipes -->
+@if (showTeamAssignmentsModal && selectedProject != null)
+{
+    <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-people-fill me-2"></i>
+                        Gérer les affectations d'équipes - @selectedProject.Nom
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseTeamAssignmentsModal"></button>
+                </div>
+
+                <div class="modal-body">
+                    <!-- Affectations actuelles -->
+                    <h6>Affectations actuelles</h6>
+                    <div class="table-responsive mb-4">
+                        <table class="table table-modern">
+                            <thead>
+                            <tr>
+                                <th>Équipe</th>
+                                <th>Date début</th>
+                                <th>Date fin</th>
+                                <th>Membres</th>
+                                <th>Statut</th>
+                                <th>Actions</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            @foreach (var affectation in selectedProject.Affectations.OrderByDescending(a => a.DateDebut))
+                            {
+                                <tr>
+                                    <td>
+                                        <strong>@affectation.Equipe.Nom</strong>
+                                    </td>
+                                    <td>@affectation.DateDebut.ToString("dd/MM/yyyy")</td>
+                                    <td>
+                                        @if (affectation.DateFin.HasValue)
+                                        {
+                                            @affectation.DateFin.Value.ToString("dd/MM/yyyy")
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">Indéterminée</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-info">@affectation.Equipe.Membres.Count membre(s)</span>
+                                    </td>
+                                    <td>
+                                        @if (affectation.EstActive)
+                                        {
+                                            <span class="badge bg-success">Active</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-secondary">Inactive</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-primary"
+                                                @onclick="() => EditTeamAssignment(affectation)">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-danger"
+                                                @onclick="() => DeleteTeamAssignment(affectation)">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Nouvelle affectation -->
+                    <h6>Ajouter une affectation d'équipe</h6>
+                    <div class="card">
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <div class="col-md-4">
+                                    <label class="form-label">Équipe</label>
+                                    <select @bind="newTeamAssignment.EquipeId" class="form-select">
+                                        <option value="0">-- Sélectionner --</option>
+                                        @foreach (var equipe in availableTeams)
+                                        {
+                                            <option value="@equipe.Id">@equipe.Nom (@equipe.Membres.Count membres)</option>
+                                        }
+                                    </select>
+                                </div>
+
+                                <div class="col-md-3">
+                                    <label class="form-label">Date début</label>
+                                    <InputDate @bind-Value="newTeamAssignment.DateDebut" class="form-control" />
+                                </div>
+
+                                <div class="col-md-3">
+                                    <label class="form-label">Date fin (optionnelle)</label>
+                                    <InputDate @bind-Value="newTeamAssignment.DateFin" class="form-control" />
+                                </div>
+
+                                <div class="col-md-2">
+                                    <label class="form-label">Statut</label>
+                                    <div class="form-check mt-2">
+                                        <InputCheckbox @bind-Value="newTeamAssignment.EstActive" class="form-check-input" id="affectationActive" />
+                                        <label class="form-check-label" for="affectationActive">
+                                            Active
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div class="col-12">
+                                    <label class="form-label">Notes</label>
+                                    <textarea @bind="newTeamAssignment.Notes" class="form-control" rows="2" placeholder="Notes sur l'affectation..."></textarea>
+                                </div>
+
+                                <div class="col-12">
+                                    <button class="btn btn-success" @onclick="AddTeamAssignment">
+                                        <i class="bi bi-plus-circle me-2"></i>Ajouter l'affectation
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" @onclick="CloseTeamAssignmentsModal">
+                        Fermer
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Projet> projets = new();
+    private List<PlanningPresenceBlazor.Data.Client> clients = new();
+    private List<Equipe> availableTeams = new();
+    private string searchTerm = "";
+    private int filterClientId = 0;
+    private bool showProjectModal = false;
+    private bool showTeamAssignmentsModal = false;
+    private Projet editingProject = new();
+    private Projet? selectedProject;
+    private AffectationEquipeProjet newTeamAssignment = new();
+    private bool isSaving = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        projets = await DbContext.Projets
+            .Include(p => p.Client)
+            .Include(p => p.Affectations)
+            .ThenInclude(a => a.Equipe)
+            .ThenInclude(e => e.Membres)
+            .OrderBy(p => p.Nom)
+            .ToListAsync();
+        
+        clients = await DbContext.Clients
+            .Where(c => c.EstActif)
+            .OrderBy(c => c.Nom)
+            .ToListAsync();
+        
+        availableTeams = await DbContext.Equipes
+            .Include(e => e.Membres)
+            .Where(e => e.EstActive)
+            .OrderBy(e => e.Nom)
+            .ToListAsync();
+        
+        StateHasChanged();
+    }
+
+    private List<Projet> GetFilteredProjets()
+    {
+        var query = projets.AsQueryable();
+        
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            query = query.Where(p => p.Nom.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+        }
+        
+        if (filterClientId > 0)
+        {
+            query = query.Where(p => p.ClientId == filterClientId);
+        }
+        
+        return query.ToList();
+    }
+
+    private void ShowAddProjectModal()
+    {
+        editingProject = new Projet { EstActif = true, DateDebut = DateTime.Today };
+        showProjectModal = true;
+    }
+
+    private void EditProject(Projet projet)
+    {
+        editingProject = new Projet
+        {
+            Id = projet.Id,
+            Nom = projet.Nom,
+            Description = projet.Description,
+            ClientId = projet.ClientId,
+            DateDebut = projet.DateDebut,
+            DateFin = projet.DateFin,
+            EstActif = projet.EstActif
+        };
+        showProjectModal = true;
+    }
+
+    private async Task DeleteProject(Projet projet)
+    {
+        try
+        {
+            DbContext.Projets.Remove(projet);
+            await DbContext.SaveChangesAsync();
+            ToastService.ShowSuccess($"Projet {projet.Nom} supprimé", "Suppression réussie");
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur: {ex.Message}", "Erreur");
+        }
+    }
+
+    private async Task SaveProject()
+    {
+        try
+        {
+            isSaving = true;
+
+            if (editingProject.Id > 0)
+            {
+                // Modification
+                var existing = await DbContext.Projets.FindAsync(editingProject.Id);
+                if (existing != null)
+                {
+                    existing.Nom = editingProject.Nom;
+                    existing.Description = editingProject.Description;
+                    existing.ClientId = editingProject.ClientId;
+                    existing.DateDebut = editingProject.DateDebut;
+                    existing.DateFin = editingProject.DateFin;
+                    existing.EstActif = editingProject.EstActif;
+                }
+            }
+            else
+            {
+                // Création
+                DbContext.Projets.Add(editingProject);
+            }
+
+            await DbContext.SaveChangesAsync();
+            ToastService.ShowSuccess("Projet sauvegardé avec succès", "Sauvegarde réussie");
+
+            CloseProjectModal();
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur lors de la sauvegarde: {ex.Message}", "Erreur");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void CloseProjectModal()
+    {
+        showProjectModal = false;
+        editingProject = new();
+    }
+
+    private void ManageTeamAssignments(Projet projet)
+    {
+        selectedProject = projet;
+        newTeamAssignment = new AffectationEquipeProjet
+        {
+            ProjetId = projet.Id,
+            DateDebut = DateTime.Today,
+            EstActive = true
+        };
+        showTeamAssignmentsModal = true;
+    }
+
+    private void CloseTeamAssignmentsModal()
+    {
+        showTeamAssignmentsModal = false;
+        selectedProject = null;
+        newTeamAssignment = new();
+    }
+
+    private void EditTeamAssignment(AffectationEquipeProjet affectation)
+    {
+        newTeamAssignment = new AffectationEquipeProjet
+        {
+            Id = affectation.Id,
+            EquipeId = affectation.EquipeId,
+            ProjetId = affectation.ProjetId,
+            DateDebut = affectation.DateDebut,
+            DateFin = affectation.DateFin,
+            EstActive = affectation.EstActive,
+            Notes = affectation.Notes
+        };
+    }
+
+    private async Task DeleteTeamAssignment(AffectationEquipeProjet affectation)
+    {
+        try
+        {
+            DbContext.AffectationsEquipeProjet.Remove(affectation);
+            await DbContext.SaveChangesAsync();
+            ToastService.ShowSuccess("Affectation d'équipe supprimée", "Suppression réussie");
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur: {ex.Message}", "Erreur");
+        }
+    }
+
+    private async Task AddTeamAssignment()
+    {
+        try
+        {
+            if (newTeamAssignment.EquipeId == 0)
+            {
+                ToastService.ShowWarning("Veuillez sélectionner une équipe", "Sélection requise");
+                return;
+            }
+
+            // Vérifier les conflits d'affectation
+            var existingAssignment = await DbContext.AffectationsEquipeProjet
+                .AnyAsync(a => a.EquipeId == newTeamAssignment.EquipeId && 
+                              a.ProjetId == selectedProject!.Id && 
+                              a.EstActive);
+
+            if (existingAssignment)
+            {
+                ToastService.ShowWarning("Cette équipe est déjà affectée à ce projet", "Conflit d'affectation");
+                return;
+            }
+
+            newTeamAssignment.ProjetId = selectedProject!.Id;
+            DbContext.AffectationsEquipeProjet.Add(newTeamAssignment);
+            await DbContext.SaveChangesAsync();
+
+            ToastService.ShowSuccess("Affectation d'équipe ajoutée avec succès", "Ajout réussi");
+
+            // Recharger le projet
+            await LoadData();
+            selectedProject = projets.First(p => p.Id == selectedProject.Id);
+
+            // Réinitialiser le formulaire
+            newTeamAssignment = new AffectationEquipeProjet
+            {
+                ProjetId = selectedProject.Id,
+                DateDebut = DateTime.Today,
+                EstActive = true
+            };
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Erreur: {ex.Message}", "Erreur");
+        }
+    }
+}

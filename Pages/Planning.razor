@@ -3,11 +3,16 @@
 @using CsvHelper
 @using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.JSInterop
+@using Microsoft.EntityFrameworkCore
+@using PlanningPresenceBlazor.Data
 @using PlanningPresenceBlazor.Services
 @inject PlanningService PlanningService
 @inject ToastService ToastService
 @inject NotificationService NotificationService
+@inject PlanningDbContext DbContext
 @inject IJSRuntime JS
+@using CleanPresenceStatus = TeamScheduler.Core.Enums.PresenceStatus
+@using CorePresenceStatus = TeamScheduler.Core.Enums.PresenceStatus
 
 <!-- En-tête de page -->
 <div class="page-header">
@@ -148,6 +153,12 @@
         </div>
 }
 
+<!-- Message contextuel -->
+@if (!string.IsNullOrEmpty(Message))
+{
+    <div class="alert @MessageCssClass">@Message</div>
+}
+
 <!-- Tableau du planning -->
 @if (planningResult != null)
 {
@@ -169,7 +180,7 @@
 
             <div class="card-body p-0">
                 <div class="table-responsive">
-                    <table class="table table-modern mb-0">
+                    <table class="@GetTableClass()">
                         <thead>
                             <tr>
                                 <th class="fw-bold">
@@ -191,20 +202,20 @@
                             </tr>
                         </thead>
                         <tbody>
-                        @foreach (var employee in planningResult.Planning.OrderBy(x => x.Key))
+                        @foreach (var employee in planningResult.Planning.OrderBy(x => employeNomComplet.TryGetValue(x.Key, out var nomComplet) ? nomComplet : x.Key))
                         {
                                     <tr>
                                         <td class="fw-bold">
                                             <i class="bi bi-person-circle me-2 text-primary"></i>
-                                    @employee.Key
+                                    @(employeNomComplet.TryGetValue(employee.Key, out var nomComplet) ? nomComplet : employee.Key)
                                         </td>
                                 @foreach (var day in WeekDays)
                                 {
                                     var presence = employee.Value[day];
-                                                <td class="text-center">
-                                                    <span class="badge @GetStatusClass(presence.Status)"
+                                                <td class="text-center @GetCellStatusClass(ConvertToCorePresenceStatus(presence.Status))">
+                                                    <span class="@GetStatusBadgeClass(ConvertToCorePresenceStatus(presence.Status))"
                                                           title="@presence.Note">
-                                            @GetStatusText(presence.Status)
+                                            @GetStatusText(ConvertToCorePresenceStatus(presence.Status))
                                                     </span>
                                         @if (!string.IsNullOrEmpty(presence.Note))
                                         {
@@ -215,7 +226,7 @@
                                 }
                                         <td class="text-center">
                                             <span class="badge bg-primary">
-                                        @employee.Value.Count(x => x.Value.Status == PresenceStatus.Present)
+                                        @employee.Value.Count(x => (CorePresenceStatus)x.Value.Status == CorePresenceStatus.Present)
                                             </span>
                                         </td>
                                     </tr>
@@ -226,12 +237,30 @@
                                 <th>Total présents par jour</th>
                             @foreach (var day in WeekDays)
                             {
-                                        <th class="text-center">
-                                    @planningResult.Planning.Count(x => x.Value[day].Status == PresenceStatus.Present)
-                                        </th>
+                                var presents = planningResult.Planning.Where(x => (CorePresenceStatus)x.Value[day].Status == CorePresenceStatus.Present)
+                                    .Select(x => employeNomComplet.TryGetValue(x.Key, out var nc) ? nc : x.Key).ToList();
+                                <th class="text-center">
+                                    @if (presents.Count <= 3)
+                                    {
+                                        @foreach (var name in presents)
+                                        {
+                                            <span class="badge bg-success me-1">@name</span>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        @foreach (var name in presents.Take(3))
+                                        {
+                                            <span class="badge bg-success me-1">@name</span>
+                                        }
+                                        <span class="badge bg-info" style="cursor:pointer" @onclick="() => ShowFullListModal(day, presents)">
+                                            +@((presents.Count - 3)) autres
+                                        </span>
+                                    }
+                                </th>
                             }
                                 <th class="text-center">
-                                @GetTotalPresences()
+                                    @GetTotalPresences()
                                 </th>
                             </tr>
                         </tfoot>
@@ -403,7 +432,38 @@ else
         </div>
 }
 
+<!-- Modal pour la liste complète des présents -->
+@if (showFullListModal)
+{
+    <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-people me-2"></i>
+                        Présents le @selectedDayForModal
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="() => showFullListModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    <ul class="list-group">
+                        @foreach (var name in selectedNamesForModal)
+                        {
+                            <li class="list-group-item">@name</li>
+                        }
+                    </ul>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="() => showFullListModal = false">Fermer</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
+    [CascadingParameter] public string ThemeClass { get; set; } = "theme-light";
+
     private DateTime selectedDate = DateTime.Today;
     private PlanningResult? planningResult;
     private bool isLoading = false;
@@ -412,11 +472,21 @@ else
     private bool testMode = true;
     private NotificationMethod selectedNotificationMethod = NotificationMethod.Email;
     private List<NotificationPreview> notificationPreviews = new();
+    private Dictionary<string, string> employeNomComplet = new(); // nom court -> Prénom + Nom
     private static readonly string[] WeekDays = { "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi" };
+
+    private string? Message;
+    private string MessageCssClass = "alert-info";
+
+    // État pour le modal de liste complète des présents
+    private bool showFullListModal = false;
+    private string selectedDayForModal = string.Empty;
+    private List<string> selectedNamesForModal = new();
 
     protected override async Task OnInitializedAsync()
     {
         selectedDate = GetMondayOfWeek(DateTime.Today);
+        await ChargerNomsCompletsEmployes();
         await GeneratePlanning();
     }
 
@@ -442,7 +512,10 @@ else
 
             if (conges.Any())
             {
-                var success = await PlanningService.SaveCongesToDbAsync(conges);
+                // Restreindre la suppression à la semaine affichée
+                var weekStart = GetMondayOfWeek(selectedDate);
+                var weekEnd = weekStart.AddDays(6);
+                var success = await PlanningService.SaveCongesToDbAsync(conges, weekStart, weekEnd);
 
                 if (success)
                 {
@@ -478,18 +551,39 @@ else
             StateHasChanged();
 
             var mondayOfWeek = GetMondayOfWeek(selectedDate);
+            // Régénérer le planning (permettre la régénération pour la même semaine)
             planningResult = await PlanningService.GeneratePlanningAsync(mondayOfWeek);
 
-            ToastService.ShowSuccess("Planning généré avec succès", "Génération terminée");
+            Message = "Planning généré avec succès.";
+            MessageCssClass = "alert-success";
         }
         catch (Exception ex)
         {
-            ToastService.ShowError($"Erreur lors de la génération: {ex.Message}", "Erreur");
+            Message = $"Erreur lors de la génération du planning : {ex.Message}";
+            MessageCssClass = "alert-danger";
         }
         finally
         {
             isLoading = false;
             StateHasChanged();
+        }
+    }
+
+    private async Task ChargerNomsCompletsEmployes()
+    {
+        // Récupérer tous les employés actifs pour la correspondance nom court -> nom complet
+        var employes = await DbContext.Employes
+            .Where(e => e.EstActif)
+            .ToListAsync();
+        
+        employeNomComplet.Clear();
+        foreach (var emp in employes)
+        {
+            var nomComplet = string.IsNullOrWhiteSpace(emp.Prenom) ? emp.Nom : $"{emp.Prenom} {emp.Nom}";
+            if (!employeNomComplet.ContainsKey(emp.Nom))
+            {
+                employeNomComplet[emp.Nom] = nomComplet;
+            }
         }
     }
 
@@ -573,6 +667,25 @@ else
         }
     }
 
+    private void ShowFullListModal(string day, List<string> names)
+    {
+        selectedDayForModal = day;
+        selectedNamesForModal = names;
+        showFullListModal = true;
+    }
+
+    // Conversion explicite entre enums Service/Core
+    private CorePresenceStatus ConvertToCorePresenceStatus(PlanningPresenceBlazor.Services.PresenceStatus status)
+    {
+        return status switch
+        {
+            PlanningPresenceBlazor.Services.PresenceStatus.Present => CorePresenceStatus.Present,
+            PlanningPresenceBlazor.Services.PresenceStatus.Absent => CorePresenceStatus.Absent,
+            PlanningPresenceBlazor.Services.PresenceStatus.Conge => CorePresenceStatus.OnLeave,
+            _ => CorePresenceStatus.Absent
+        };
+    }
+
     // Méthodes utilitaires
     private DateTime GetMondayOfWeek(DateTime date)
     {
@@ -594,22 +707,22 @@ else
         };
     }
 
-    private string GetStatusClass(PresenceStatus status)
+    private string GetStatusClass(CleanPresenceStatus status)
     {
         return status switch
         {
-            PresenceStatus.Present => "status-present",
-            PresenceStatus.Conge => "status-conge",
+            CleanPresenceStatus.Present => "status-present",
+            CleanPresenceStatus.OnLeave => "status-conge",
             _ => "status-absent"
         };
     }
 
-    private string GetStatusText(PresenceStatus status)
+    private string GetStatusText(CleanPresenceStatus status)
     {
         return status switch
         {
-            PresenceStatus.Present => "Présent",
-            PresenceStatus.Conge => "Congé",
+            CleanPresenceStatus.Present => "Présent",
+            CleanPresenceStatus.OnLeave => "Congé",
             _ => "Absent"
         };
     }
@@ -620,7 +733,7 @@ else
 
         return planningResult.Planning
             .SelectMany(x => x.Value.Values)
-            .Count(x => x.Status == PresenceStatus.Present);
+            .Count(x => (CorePresenceStatus)x.Status == CorePresenceStatus.Present);
     }
 
     private int GetCoveragePercentage()
@@ -631,6 +744,31 @@ else
         var filledSlots = GetTotalPresences();
 
         return totalSlots > 0 ? (filledSlots * 100) / totalSlots : 0;
+    }
+
+    private string GetCellStatusClass(CorePresenceStatus status)
+    {
+        return status switch
+        {
+            CorePresenceStatus.Present => "table-success",
+            CorePresenceStatus.OnLeave => "table-warning",
+            CorePresenceStatus.Absent => "table-danger",
+            _ => ""
+        };
+    }
+
+    private string GetTableClass() => ThemeClass == "theme-dark" ? "table table-modern table-dark mb-0" : "table table-modern mb-0";
+    private string GetStatusBadgeClass(CorePresenceStatus status)
+    {
+        return status switch
+        {
+            CorePresenceStatus.Present => "badge bg-success",
+            CorePresenceStatus.Absent => "badge bg-danger",
+            CorePresenceStatus.OnLeave => "badge bg-warning text-dark",
+            CorePresenceStatus.PartialDay => "badge bg-info text-dark",
+            CorePresenceStatus.Remote => "badge bg-primary",
+            _ => "badge bg-secondary"
+        };
     }
 }
 

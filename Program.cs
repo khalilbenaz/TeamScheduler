@@ -30,15 +30,25 @@ builder.Services.AddServerSideBlazor();
 
 // Configuration de la base de données SQLite
 builder.Services.AddDbContext<PlanningDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=planning.db")
-           .EnableSensitiveDataLogging(builder.Environment.IsDevelopment())
-           .EnableDetailedErrors(builder.Environment.IsDevelopment()));
+    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=planning.db"));
 
-// Services métier
-builder.Services.AddScoped<PlanningService>();
+// Anciens services (migration progressive)
 builder.Services.AddScoped<TeamPlanningService>();
-builder.Services.AddScoped<NotificationService>();
+builder.Services.AddScoped<PlanningService>();
+builder.Services.AddScoped<SchedulerService>();
 builder.Services.AddScoped<ToastService>();
+builder.Services.AddScoped<ExportService>();
+builder.Services.AddScoped<ReportService>();
+builder.Services.AddScoped<NotificationService>();
+
+// Nouvelle architecture - Repositories
+builder.Services.AddScoped<TeamScheduler.Core.Interfaces.ITeamRepository, TeamScheduler.Infrastructure.Repositories.TeamRepository>();
+builder.Services.AddScoped<TeamScheduler.Core.Interfaces.IEmployeeRepository, TeamScheduler.Infrastructure.Repositories.EmployeeRepository>();
+builder.Services.AddScoped<TeamScheduler.Core.Interfaces.ITeamClientAssignmentRepository, TeamScheduler.Infrastructure.Repositories.TeamClientAssignmentRepository>();
+builder.Services.AddScoped<TeamScheduler.Core.Interfaces.ITeamProjectAssignmentRepository, TeamScheduler.Infrastructure.Repositories.TeamProjectAssignmentRepository>();
+
+// Nouvelle architecture - Services
+builder.Services.AddScoped<TeamScheduler.Application.Services.ITeamService, TeamScheduler.Application.Services.TeamService>();
 
 // Configuration des options
 builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection("Email"));
@@ -110,6 +120,13 @@ using (var scope = app.Services.CreateScope())
         Log.Fatal(ex, "Erreur lors de l'initialisation de la base de données");
         throw;
     }
+}
+
+// Seed initial data for testing
+using (var scope = app.Services.CreateScope())
+{
+    var context = scope.ServiceProvider.GetRequiredService<PlanningDbContext>();
+    PlanningPresenceBlazor.DataTools.TestDataSeeder.SeedPresences(context);
 }
 
 Log.Information("Application démarrée");

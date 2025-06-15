@@ -1,0 +1,79 @@
+@using Microsoft.AspNetCore.Components.Web
+
+<div class="architecture-toggle">
+    <div class="btn-group" role="group">
+        <input type="radio" class="btn-check" name="architecture" id="legacy" 
+               checked="@(CurrentMode == ArchitectureMode.Legacy)" 
+               @onchange="() => SwitchMode(ArchitectureMode.Legacy)">
+        <label class="btn btn-outline-secondary" for="legacy">
+            <i class="bi bi-arrow-clockwise me-1"></i>Legacy
+        </label>
+
+        <input type="radio" class="btn-check" name="architecture" id="clean" 
+               checked="@(CurrentMode == ArchitectureMode.Clean)"
+               @onchange="() => SwitchMode(ArchitectureMode.Clean)">
+        <label class="btn btn-outline-primary" for="clean">
+            <i class="bi bi-gear-fill me-1"></i>Clean Architecture
+        </label>
+    </div>
+    
+    @if (ShowDescription)
+    {
+        <div class="architecture-description mt-2">
+            @if (CurrentMode == ArchitectureMode.Legacy)
+            {
+                <small class="text-muted">
+                    <i class="bi bi-info-circle me-1"></i>
+                    Version originale fonctionnelle avec structure monolithique
+                </small>
+            }
+            else
+            {
+                <small class="text-primary">
+                    <i class="bi bi-star-fill me-1"></i>
+                    Nouvelle architecture avec séparation des responsabilités
+                </small>
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .architecture-toggle {
+        margin: 1rem 0;
+    }
+    
+    .architecture-description {
+        max-width: 400px;
+    }
+    
+    .btn-check:checked + .btn-outline-primary {
+        background-color: var(--bs-primary);
+        border-color: var(--bs-primary);
+        color: white;
+    }
+    
+    .btn-check:checked + .btn-outline-secondary {
+        background-color: var(--bs-secondary);
+        border-color: var(--bs-secondary);
+        color: white;
+    }
+</style>
+
+@code {
+    [Parameter] public ArchitectureMode CurrentMode { get; set; } = ArchitectureMode.Legacy;
+    [Parameter] public EventCallback<ArchitectureMode> OnModeChanged { get; set; }
+    [Parameter] public bool ShowDescription { get; set; } = true;
+
+    public enum ArchitectureMode
+    {
+        Legacy,
+        Clean
+    }
+
+    private async Task SwitchMode(ArchitectureMode mode)
+    {
+        CurrentMode = mode;
+        await OnModeChanged.InvokeAsync(mode);
+    }
+}
