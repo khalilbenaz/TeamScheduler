@@ -17,6 +17,9 @@ TeamScheduler est une application web Blazor dédiée à la gestion collaborativ
 - **Historique de présence** : suivi détaillé des présences, télétravail, site, client, avec commentaires.
 - **Navigation moderne** : menu principal restauré, navigation fluide, liens harmonisés.
 - **Synchronisation modèle/base** : migrations EF Core à jour, entités synchronisées avec la base de données.
+- **Sécurité avancée** : gestion des rôles, routes sécurisées, timeout session, confirmation automatique de l’email à l’inscription.
+- **UI/UX Material Design** : pages d’authentification (connexion, inscription, mot de passe oublié) modernisées en style Google Material.
+- **Synchronisation automatique des données utilisateur** : Prénom, Nom, Téléphone synchronisés avec l’entité Employee, notifications planning à jour.
 
 ## Architecture technique
 - **Frontend** : Blazor Server (.NET 8), Bootstrap 5, Chart.js
@@ -54,6 +57,10 @@ TeamScheduler est une application web Blazor dédiée à la gestion collaborativ
 - Gestion des rôles (Administrateur, Manager, Utilisateur)
 - Authentification intégrée (à compléter selon besoins SSO/OAuth)
 - Journalisation des actions (logs)
+- Timeout de session configurable
+- Confirmation automatique de l’email à l’inscription (aucun mail à cliquer)
+- Synchronisation automatique des données utilisateur (Prénom, Nom, Téléphone)
+- UI/UX Material Design sur toutes les pages d’authentification
 
 ## Tests & validation
 - Tests unitaires dans `Tests/Unit/`
